@@ -2,8 +2,8 @@ import sys
 from pathlib import Path
 
 from config import STATIC_DIR, config
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Template
 from loguru import logger
@@ -35,6 +35,235 @@ def set_mount(app: FastAPI):
     app.mount("/swagger/", StaticFiles(directory=STATIC_DIR))
 
 
+def set_proxy(app: FastAPI):
+    """Set up proxy routes for external API specifications"""
+    sources = config.get("sources", [])
+    proxy_enabled = config.get("settings", {}).get("proxy", False)
+
+    if not proxy_enabled:
+        return
+
+    # Check if Caddy is available (running in container or system)
+    caddy_available = _check_caddy_availability()
+
+    if not caddy_available:
+        logger.warning(
+            "Proxy is enabled in config but Caddy is not available. "
+            "Proxy routes will not be created. "
+            "Make sure Caddy is running or set proxy: false in config.yml"
+        )
+        return
+
+    logger.info("Caddy detected, setting up proxy routes...")
+
+    # Automatically generate Caddyfile if Caddy is available
+    _generate_caddyfile(sources)
+
+    for source in sources:
+        if not source.get("enabled", True):
+            continue
+
+        source_url = source.get("url", "").rstrip("/")
+        schema_url = source.get("schema", "").rstrip("/")
+
+        if not source_url or not schema_url:
+            continue
+
+        # Create proxy route for the source URL
+        @app.api_route(
+            "/proxy/{source_name}/{path:path}",
+            methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+            include_in_schema=False,
+        )
+        async def proxy_request(source_name: str, path: str, request: Request):
+            # Find the source by name
+            target_source = None
+            for src in sources:
+                # Create URL-safe name for comparison
+                safe_name = _create_safe_name(src.get("name", ""))
+                if safe_name == source_name and src.get("enabled", True):
+                    target_source = src
+                    break
+
+            if not target_source:
+                return {"error": f"Source {source_name} not found or disabled"}
+
+            target_url = target_source.get("url", "").rstrip("/")
+            if not target_url:
+                return {"error": f"Invalid URL for source {source_name}"}
+
+            # Build the full target URL
+            full_url = f"{target_url}/{path}"
+
+            # Get query parameters
+            query_params = str(request.query_params) if request.query_params else ""
+            if query_params:
+                full_url += f"?{query_params}"
+
+            # Redirect to the target URL
+            return RedirectResponse(url=full_url, status_code=307)
+
+        # Create a more specific proxy route for the exact source
+        safe_source_name = _create_safe_name(source.get("name", ""))
+        if safe_source_name:
+
+            @app.api_route(
+                f"/proxy/{safe_source_name}/{{path:path}}",
+                methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+                include_in_schema=False,
+            )
+            async def proxy_specific_source(path: str, request: Request):
+                target_url = source_url
+                full_url = f"{target_url}/{path}"
+
+                # Get query parameters
+                query_params = str(request.query_params) if request.query_params else ""
+                if query_params:
+                    full_url += f"?{query_params}"
+
+                # Redirect to the target URL
+                return RedirectResponse(url=full_url, status_code=307)
+
+
+def _generate_caddyfile(sources: list):
+    """Automatically generate Caddyfile for external API sources"""
+    try:
+        # Caddyfile template
+        caddy_template = """# Auto-generated Caddy configuration
+# Generated from config.yml
+
+# Main API documentation service
+:8000 {
+    # Serve the main API docs
+    handle /* {
+        reverse_proxy localhost:8001
+    }
+}
+
+# Proxy routes for external APIs
+{% for source in sources %}
+{% if source.enabled %}
+{% if source.url not in ["http://localhost:8000", "http://127.0.0.1:8000", "http://0.0.0.0:8000"] %}
+# External service: {{ source.name }}
+{{ source.safe_name }}/* {
+    reverse_proxy {{ source.url }} {
+        header_up Host {upstream_hostport}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+{% endif %}
+{% endif %}
+{% endfor %}
+
+# Health check endpoint
+:8000/health {
+    respond "OK" 200
+}
+"""
+
+        # Prepare data for template
+        external_sources = []
+        for source in sources:
+            if source.get("enabled", True):
+                source_url = source.get("url", "").rstrip("/")
+                # Check if it's external (not localhost:8000)
+                if not any(
+                    local in source_url
+                    for local in ["localhost:8000", "127.0.0.1:8000", "0.0.0.0:8000"]
+                ):
+                    source_copy = source.copy()
+                    source_copy["safe_name"] = _create_safe_name(source.get("name", ""))
+                    external_sources.append(source_copy)
+
+        # Generate Caddyfile
+        template = Template(caddy_template)
+        caddy_config = template.render(sources=external_sources)
+
+        # Write to /etc/caddy/Caddyfile (for Caddy) and local Caddyfile (for reference)
+        caddy_paths = [Path("/etc/caddy/Caddyfile"), Path("Caddyfile")]
+
+        for caddy_path in caddy_paths:
+            try:
+                caddy_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(caddy_path, "w", encoding="utf-8") as f:
+                    f.write(caddy_config)
+                logger.info(f"Caddyfile generated at: {caddy_path}")
+            except Exception as e:
+                logger.warning(f"Could not write Caddyfile to {caddy_path}: {e}")
+
+        logger.info(
+            f"Generated Caddyfile with {len(external_sources)} external sources:"
+        )
+        for source in external_sources:
+            logger.info(f"  - {source['name']} -> /{source['safe_name']}/")
+
+    except Exception as e:
+        logger.error(f"Failed to generate Caddyfile: {e}")
+
+
+def _create_safe_name(name: str) -> str:
+    """Create URL-safe name by removing/replacing special characters"""
+    import re
+
+    # Replace spaces, parentheses, and other special characters with underscores
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name)
+    # Remove multiple consecutive underscores
+    safe_name = re.sub(r"_+", "_", safe_name)
+    # Remove leading and trailing underscores
+    safe_name = safe_name.strip("_")
+    # Convert to lowercase
+    safe_name = safe_name.lower()
+    return safe_name
+
+
+def _check_caddy_availability() -> bool:
+    """Check if Caddy is available (running in container or system)"""
+    import os
+    import subprocess
+    import socket
+
+    # Method 1: Check if running in Docker container with Caddy
+    if os.path.exists("/.dockerenv"):
+        try:
+            # Try to connect to Caddy's admin API or check if Caddy process exists
+            result = subprocess.run(
+                ["pgrep", "-f", "caddy"], capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+    # Method 2: Check if Caddy port is accessible
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex(("localhost", 80))  # Caddy default port
+        sock.close()
+        if result == 0:
+            return True
+    except:
+        pass
+
+    # Method 3: Check environment variables (for Docker Compose)
+    if os.environ.get("CADDY_AVAILABLE") == "true":
+        return True
+
+    # Method 4: Check if Caddy binary exists
+    try:
+        result = subprocess.run(
+            ["which", "caddy"], capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return True
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    return False
+
+
 def set_logger():
     logger.remove()
 
@@ -46,4 +275,4 @@ def set_logger():
     )
 
 
-__all__ = ["set_docs", "set_logger", "set_mount", "set_schema"]
+__all__ = ["set_docs", "set_logger", "set_mount", "set_schema", "set_proxy"]

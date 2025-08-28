@@ -1,0 +1,37 @@
+# Caddy configuration template for API proxy
+# Generated from config.yml
+
+# Main API documentation service
+:80 {
+    # Serve the main API docs
+    handle /* {
+        reverse_proxy localhost:8000
+    }
+}
+
+# Proxy routes for external APIs
+{{#each sources}}
+{{#if enabled}}
+{{#if (ne url "http://localhost:8000")}}
+{{#if (ne url "http://127.0.0.1:8000")}}
+{{#if (ne url "http://0.0.0.0:8000")}}
+# External service: {{name}}
+{{safe_name}}/* {
+    reverse_proxy {{url}} {
+        header_up Host {upstream_hostport}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+{{/if}}
+{{/if}}
+{{/if}}
+{{/if}}
+{{/if}}
+{{/each}}
+
+# Health check endpoint
+:80/health {
+    respond "OK" 200
+}

@@ -137,9 +137,12 @@ class SchemasMerger:
 
         return merged_components
 
-    def _prepare_server_for_schema(self, schema: dict, *, url: str) -> dict:
+    def _prepare_server_for_schema(
+        self, schema: dict, *, url: str, source_name: str = None
+    ) -> dict:
         """Adds server to all operations in the schema"""
         prepared_schema = schema.copy()
+        proxy_enabled = config.get("settings", {}).get("proxy", False)
 
         # Get all paths
         paths = dpath.get(prepared_schema, "paths") or {}
@@ -157,9 +160,93 @@ class SchemasMerger:
                     )
 
                     if not server_exists:
-                        operation["servers"].append({"url": url})
+                        # If proxy is enabled and this is an external service, check Caddy availability
+                        if proxy_enabled and source_name:
+                            # Check if Caddy is available before creating proxy servers
+                            if self._is_caddy_available():
+                                # Create proxy URL for external services using the same logic as in __init__.py
+                                safe_name = self._create_safe_name(source_name)
+                                proxy_url = f"/proxy/{safe_name}"
+                                operation["servers"].append(
+                                    {
+                                        "url": proxy_url,
+                                        "description": f"Proxied to {url}",
+                                    }
+                                )
+                                logger.debug(
+                                    f"Added proxy server {proxy_url} for {source_name}"
+                                )
+                            else:
+                                # Caddy not available, use original URL but log warning
+                                operation["servers"].append({"url": url})
+                                logger.warning(
+                                    f"Proxy enabled but Caddy not available for {source_name}. "
+                                    f"Using original URL: {url}"
+                                )
+                        else:
+                            # Use original URL
+                            operation["servers"].append({"url": url})
 
         return prepared_schema
+
+    def _is_caddy_available(self) -> bool:
+        """Check if Caddy is available (same logic as in __init__.py)"""
+        import os
+        import subprocess
+        import socket
+
+        # Method 1: Check if running in Docker container with Caddy
+        if os.path.exists("/.dockerenv"):
+            try:
+                # Try to connect to Caddy's admin API or check if Caddy process exists
+                result = subprocess.run(
+                    ["pgrep", "-f", "caddy"], capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    return True
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+        # Method 2: Check if Caddy port is accessible
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex(("localhost", 80))  # Caddy default port
+            sock.close()
+            if result == 0:
+                return True
+        except:
+            pass
+
+        # Method 3: Check environment variables (for Docker Compose)
+        if os.environ.get("CADDY_AVAILABLE") == "true":
+            return True
+
+        # Method 4: Check if Caddy binary exists
+        try:
+            result = subprocess.run(
+                ["which", "caddy"], capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        return False
+
+    def _create_safe_name(self, name: str) -> str:
+        """Create URL-safe name by removing/replacing special characters"""
+        import re
+
+        # Replace spaces, parentheses, and other special characters with underscores
+        safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name)
+        # Remove multiple consecutive underscores
+        safe_name = re.sub(r"_+", "_", safe_name)
+        # Remove leading and trailing underscores
+        safe_name = safe_name.strip("_")
+        # Convert to lowercase
+        safe_name = safe_name.lower()
+        return safe_name
 
     def _prepare_grouping(self, schema: dict, *, name: str) -> dict:
         """Adds service name to schema tags for grouping"""
@@ -192,7 +279,9 @@ class SchemasMerger:
 
             logger.info(f"=== {service_name} ===")
             logger.info(f"Adding server {source.get('url')} to schema")
-            schema = self._prepare_server_for_schema(schema, url=source.get("url"))
+            schema = self._prepare_server_for_schema(
+                schema, url=source.get("url"), source_name=service_name
+            )
 
             # If grouping is enabled, add service name to tags
             if self.grouping:

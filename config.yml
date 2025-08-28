@@ -16,6 +16,7 @@ sources:
 
 settings:
   title: Merged API
-  # description: Merged API description
+  description: Merged API description
   version: 1.0.0
   grouping: true
+  proxy: true

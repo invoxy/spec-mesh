@@ -1,0 +1,8 @@
+config.yml
+Caddyfile
+.env
+.git
+.gitignore
+.dockerignore
+.docker
+.venv
