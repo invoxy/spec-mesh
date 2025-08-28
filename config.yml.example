@@ -1,0 +1,28 @@
+# Configuration file for the API documentation service
+# Copy this file to config.yml and update the values according to your environment
+
+sources:
+  # Example source configuration for a test environment
+  - name: "Your API Service Name"
+    url: "http://your-api-host:port/"
+    schema: "http://your-api-host:port/api/schema/"
+    enabled: true
+
+  # Example source configuration for a local development environment
+  - name: "Local Development API"
+    url: "http://localhost:8000/"
+    schema: "http://localhost:8000/api/schema/"
+    enabled: true
+
+  # Example source configuration for OpenAPI/Swagger endpoints
+  - name: "OpenAPI Service"
+    url: "http://localhost:8080/"
+    schema: "http://localhost:8080/openapi.json"
+    enabled: true
+
+# Global settings for the merged API documentation
+settings:
+  title: "Your Merged API Title"
+  description: "Description of your merged API services"
+  version: "1.0.0"
+  grouping: true  # Enable grouping of endpoints by source
