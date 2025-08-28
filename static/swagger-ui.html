@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ config.title }}</title>
+    <link rel="stylesheet" type="text/css" href="/swagger/swagger-ui.css" />
+    <link rel="icon" type="image/x-icon" href="/swagger/favicon.png" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin:0;
+            background: #fafafa;
+        }
+        
+        /* Styles for the Clear Token button */
+        .auth-container .btn.clear-token {
+            background: #ff6b6b !important;
+            color: white !important;
+            border: 1px solid #ff6b6b !important;
+            margin-left: 10px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .btn.clear-token {
+            margin-left: 15px;
+        }
+        
+        .auth-container .btn.clear-token:hover {
+            background: #ff5252 !important;
+            border-color: #ff5252 !important;
+        }
+        
+        /* Add spacing between auth buttons */
+        .auth-container .btn,
+        .auth-container button {
+            margin-right: 8px;
+        }
+        
+        .auth-container .btn:last-child,
+        .auth-container button:last-child {
+            margin-right: 0;
+        }
+        
+        /* Hide Swagger UI topbar */
+        .swagger-ui .topbar {
+            display: none !important;
+        }
+        
+        #http-method-select {
+            border: 2px solid #333;
+            box-sizing: border-box;
+        }
+
+        /* Hide all topbar elements */
+        .swagger-ui .topbar-wrapper,
+        .swagger-ui .topbar .download-url-wrapper,
+        .swagger-ui .topbar .topbar-wrapper {
+            display: none !important;
+        }
+        
+        /* Hide hgroup.main */
+        .swagger-ui hgroup.main {
+            display: none !important;
+        }
+        
+        /* Remove paddings that might be added by the topbar */
+        .swagger-ui .wrapper {
+            padding-top: 0 !important;
+        }
+        
+        .swagger-ui .info {
+            margin-top: 0 !important;
+        }
+        
+        /* Styles for HTTP method filter in Swagger style */
+        .http-method-filter {
+            display: inline-flex;
+            align-items: center;
+            margin-left: 15px;
+            padding: 0;
+            background: none;
+            border: none;
+            position: relative;
+        }
+        
+        .http-method-filter .filter-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        
+        .http-method-filter select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            min-width: 140px;
+            padding: 6px 32px 6px 12px;
+            border: 1px solid #e3e3e3;
+            border-radius: 4px;
+            background: white url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Cpath fill='%23666' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 8px center;
+            background-size: 16px;
+            font-size: 13px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            color: #333;
+            cursor: pointer;
+            height: 32px;
+            line-height: 1;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        
+        .http-method-filter select:hover {
+            border-color: #b3b3b3;
+            background-color: #f8f9fa;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .http-method-filter select:focus {
+            outline: none;
+            border-color: #4990e2;
+            background-color: white;
+            box-shadow: 0 0 0 3px rgba(73, 144, 226, 0.1);
+        }
+        
+        .http-method-filter select option {
+            padding: 8px 12px;
+            font-size: 13px;
+            background: white;
+            color: #333;
+            border: none;
+        }
+        
+        .http-method-filter select option:hover {
+            background: #f8f9fa;
+        }
+        
+        .http-method-filter select option:checked {
+            background: #4990e2;
+            color: white;
+        }
+        
+        /* Styles for options with color-coded HTTP methods */
+        .http-method-filter select option[value="GET"] {
+            border-left: 3px solid #61affe;
+        }
+        
+        .http-method-filter select option[value="POST"] {
+            border-left: 3px solid #49cc90;
+        }
+        
+        .http-method-filter select option[value="PUT"] {
+            border-left: 3px solid #fca130;
+        }
+        
+        .http-method-filter select option[value="PATCH"] {
+            border-left: 3px solid #50e3c2;
+        }
+        
+        .http-method-filter select option[value="DELETE"] {
+            border-left: 3px solid #f93e3e;
+        }
+        
+        .http-method-filter select option[value="HEAD"] {
+            border-left: 3px solid #9012fe;
+        }
+        
+        /* Styles for integration with the existing Swagger filter */
+        .swagger-ui .filter {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .swagger-ui .filter .http-method-filter {
+            margin-left: 0;
+        }
+        
+        /* Responsive styles for mobile devices */
+        @media (max-width: 768px) {
+            .http-method-filter {
+                margin-left: 10px;
+                margin-top: 8px;
+            }
+            
+            .http-method-filter select {
+                min-width: 120px;
+                font-size: 12px;
+                height: 28px;
+                padding: 4px 28px 4px 10px;
+            }
+            
+            .swagger-ui .filter {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+        }
+        
+        /* Dark theme (if Swagger uses a dark theme) */
+        .swagger-ui .http-method-filter select {
+            background-color: white;
+            border-color: #4a5568;
+            color: #333;
+        }
+        
+        .swagger-ui .http-method-filter select:hover {
+            background-color: #f8f9fa;
+            border-color: #718096;
+        }
+        
+        .swagger-ui .http-method-filter select:focus {
+            border-color: #63b3ed;
+            background-color: white;
+        }
+        
+        .swagger-ui .http-method-filter select option {
+            background: white;
+            color: #333;
+        }
+        
+        .swagger-ui .http-method-filter select option:hover {
+            background: #f8f9fa;
+        }
+        
+        .swagger-ui .http-method-filter select option:checked {
+            background: #63b3ed;
+            color: white;
+        }
+        
+        .filter-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-left: auto;
+            flex-wrap: wrap;
+        }
+        
+        .filter-btn {
+            padding: 6px 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            white-space: nowrap;
+            transition: background-color 0.2s;
+        }
+        
+        .filter-btn:hover {
+            background: #0056b3;
+        }
+        
+        .filter-btn.secondary {
+            background: #6c757d;
+        }
+        
+        .filter-btn.secondary:hover {
+            background: #545b62;
+        }
+        
+        /* Responsive styles for mobile devices */
+        @media (max-width: 768px) {
+            .http-method-filter {
+                margin-left: 10px;
+                margin-top: 10px;
+            }
+            
+            .http-method-filter select {
+                min-width: 100px;
+                font-size: 11px;
+            }
+            
+            .filter-controls {
+                margin-left: 0;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-standalone-preset.js"></script>
+    <script src="https://unpkg.com/swagger-ui-plugin-hierarchical-tags"></script>
+
+    <script>
+        // Constants for localStorage
+        const TOKEN_STORAGE_KEY = 'swagger_auth_token';
+        const TOKEN_TYPE_STORAGE_KEY = 'swagger_auth_token_type';
+        const HTTP_METHOD_FILTER_KEY = 'swagger_http_method_filter';
+
+        // Token helpers
+        function saveTokenToStorage(token, tokenType = 'Bearer') {
+            try {
+                localStorage.setItem(TOKEN_STORAGE_KEY, token);
+                localStorage.setItem(TOKEN_TYPE_STORAGE_KEY, tokenType);
+            } catch (e) {
+                // Token was not saved
+            }
+        }
+
+        function loadTokenFromStorage() {
+            try {
+                const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+                const tokenType = localStorage.getItem(TOKEN_TYPE_STORAGE_KEY) || 'Bearer';
+                return token ? { token, tokenType } : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function clearTokenFromStorage() {
+            try {
+                localStorage.removeItem(TOKEN_STORAGE_KEY);
+                localStorage.removeItem(TOKEN_TYPE_STORAGE_KEY);
+            } catch (e) {
+                // Token was not removed
+            }
+        }
+
+        // HTTP method filter helpers
+        function saveHttpMethodFilter(filterState) {
+            try {
+                localStorage.setItem(HTTP_METHOD_FILTER_KEY, JSON.stringify(filterState));
+            } catch (e) {
+                // Filter was not saved
+            }
+        }
+
+        function loadHttpMethodFilter() {
+            try {
+                const saved = localStorage.getItem(HTTP_METHOD_FILTER_KEY);
+                return saved ? JSON.parse(saved) : getDefaultFilterState();
+            } catch (e) {
+                return getDefaultFilterState();
+            }
+        }
+
+        function getDefaultFilterState() {
+            return {
+                selectedMethod: ""
+            };
+        }
+
+        // Initialize HTTP method filter
+        function initializeHttpMethodFilter() {
+            const select = document.querySelector('#http-method-select');
+            if (!select) {
+                console.warn('HTTP method filter select not found');
+                return;
+            }
+            
+            // Load saved state
+            const savedState = loadHttpMethodFilter();
+            if (savedState.selectedMethod) {
+                select.value = savedState.selectedMethod;
+            }
+
+            // Apply filter when selection changes
+            select.addEventListener('change', function() {
+                console.log('HTTP method filter changed to:', this.value);
+                applyHttpMethodFilter();
+            });
+            
+            // Apply filter right after initialization
+            setTimeout(() => {
+                applyHttpMethodFilter();
+            }, 100);
+            
+            console.log('HTTP method filter initialized successfully');
+        }
+
+        // Create HTTP method filter (kept for compatibility)
+        function createHttpMethodFilter() {
+            const filterContainer = document.createElement('div');
+            filterContainer.className = 'http-method-filter';
+            filterContainer.innerHTML = `
+                <div class="filter-wrapper">
+                    <select id="http-method-select" title="Filter by HTTP method">
+                        <option value="">All methods</option>
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="PATCH">PATCH</option>
+                        <option value="DELETE">DELETE</option>
+                    </select>
+                </div>
+            `;
+
+            // Load saved state
+            const savedState = loadHttpMethodFilter();
+            const select = filterContainer.querySelector('#http-method-select');
+            
+            // Set saved value
+            if (savedState.selectedMethod) {
+                select.value = savedState.selectedMethod;
+            }
+
+            // Apply filter on change
+            select.addEventListener('change', function() {
+                applyHttpMethodFilter();
+            });
+
+            return filterContainer;
+        }
+
+        // Apply HTTP method filter
+        function applyHttpMethodFilter() {
+            const select = document.querySelector('#http-method-select');
+            const selectedMethod = select ? select.value : "";
+            
+            // Save state
+            saveHttpMethodFilter({ selectedMethod });
+
+            // Find all operation blocks using various selectors
+            const operations = document.querySelectorAll('.opblock, .operation-tag-content .opblock');
+            
+            operations.forEach(operation => {
+                // Find element with HTTP method using multiple possible selectors
+                const methodElement = operation.querySelector('.opblock-summary-method, .opblock-summary-operation-id, [data-http-method]');
+                
+                if (methodElement) {
+                    let method = methodElement.textContent.trim();
+                    
+                    // If method not found in text, try to get it from data-attribute
+                    if (!method && methodElement.getAttribute('data-http-method')) {
+                        method = methodElement.getAttribute('data-http-method');
+                    }
+                    
+                    // If still no method, try to find it in parent elements
+                    if (!method) {
+                        const parentMethodElement = operation.closest('.opblock')?.querySelector('.opblock-summary-method');
+                        if (parentMethodElement) {
+                            method = parentMethodElement.textContent.trim();
+                        }
+                    }
+                    
+                    // Apply filter
+                    const isVisible = !selectedMethod || method.toUpperCase() === selectedMethod.toUpperCase();
+                    operation.style.display = isVisible ? '' : 'none';
+                }
+            });
+            
+            // Additionally, search for operations in newer Swagger UI versions
+            const newOperations = document.querySelectorAll('[data-http-method]');
+            newOperations.forEach(operation => {
+                const method = operation.getAttribute('data-http-method');
+                const opBlock = operation.closest('.opblock, .operation-tag-content');
+                
+                if (opBlock && method) {
+                    const isVisible = !selectedMethod || method.toUpperCase() === selectedMethod.toUpperCase();
+                    opBlock.style.display = isVisible ? '' : 'none';
+                }
+            });
+        }
+
+        // Reset HTTP method filter
+        function resetHttpMethodFilter() {
+            const select = document.querySelector('#http-method-select');
+            if (select) {
+                select.value = "";
+                applyHttpMethodFilter();
+            }
+        }
+
+        // Выбор всех методов
+        function selectAllMethods() {
+            const select = document.querySelector('#http-method-select');
+            if (select) {
+                select.value = ""; // Reset selection
+                applyHttpMethodFilter();
+            }
+        }
+
+        // Deselect all methods
+        function deselectAllMethods() {
+            const select = document.querySelector('#http-method-select');
+            if (select) {
+                select.value = ""; // Reset selection
+                applyHttpMethodFilter();
+            }
+        }
+
+        // Add Clear Token button
+        function addClearTokenButton() {
+            // Wait for the auth section to appear
+            const checkForAuthSection = setInterval(() => {
+                const authSection = document.querySelector('.auth-wrapper');
+                if (authSection) {
+                    clearInterval(checkForAuthSection);
+                    
+                    // Create the clear button
+                    const clearButton = document.createElement('button');
+                    clearButton.className = 'btn clear-token';
+                    clearButton.textContent = '🗑️ Clear token';
+                    clearButton.title = 'Delete saved token from browser';
+                    
+                    clearButton.onclick = function() {
+                        if (confirm('Delete saved token? This will sign you out.')) {
+                            clearTokenFromStorage();
+                            // Update UI
+                            if (window.ui) {
+                                window.ui.authActions.logout(['OAuth2PasswordBearer']);
+                            }
+                            location.reload();
+                        }
+                    };
+                    
+                    // Add button to the interface
+                    const authContainer = authSection.querySelector('.auth-container') || authSection;
+                    authContainer.appendChild(clearButton);
+                }
+            }, 100);
+            
+            // Stop checking after 10 seconds
+            setTimeout(() => clearInterval(checkForAuthSection), 10000);
+        }
+
+        // Add HTTP method filter
+        function addHttpMethodFilter() {
+            // Check if the filter is already added
+            if (document.querySelector('.http-method-filter')) {
+                console.log('HTTP method filter already exists, skipping...');
+                return;
+            }
+            
+            // Function to attempt adding the filter
+            function attemptAddFilter() {
+                // Look for existing Swagger UI filter
+                const existingFilter = document.querySelector('.swagger-ui .filter');
+                if (existingFilter) {
+                    // Double-check the filter is not already added
+                    if (existingFilter.querySelector('.http-method-filter')) {
+                        console.log('HTTP method filter already exists in existing filter, skipping...');
+                        return true;
+                    }
+                    
+                    // Create and append HTTP method filter
+                    const filter = createHttpMethodFilter();
+                    existingFilter.appendChild(filter);
+                    
+                    // Initialize filter
+                    initializeHttpMethodFilter();
+                    
+                    // Apply filter with delay
+                    setTimeout(() => {
+                        applyHttpMethodFilter();
+                        console.log('HTTP method filter applied successfully');
+                    }, 500);
+                    
+                    return true;
+                }
+                
+                // Alternative containers for adding the filter
+                const possibleContainers = [
+                    document.querySelector('.auth-wrapper'),
+                    document.querySelector('.auth-container'),
+                    document.querySelector('.swagger-ui .topbar'),
+                    document.querySelector('.swagger-ui .info'),
+                    document.querySelector('.swagger-ui .scheme-container')
+                ].filter(Boolean);
+                
+                if (possibleContainers.length > 0) {
+                    const container = possibleContainers[0];
+                    
+                    // Double-check the filter is not already added
+                    if (container.querySelector('.http-method-filter')) {
+                        console.log('HTTP method filter already exists in alternative container, skipping...');
+                        return true;
+                    }
+                    
+                    // Create and append filter
+                    const filter = createHttpMethodFilter();
+                    container.appendChild(filter);
+                    
+                    // Initialize filter
+                    initializeHttpMethodFilter();
+                    
+                    // Apply filter with delay
+                    setTimeout(() => {
+                        applyHttpMethodFilter();
+                        console.log('HTTP method filter applied successfully');
+                    }, 500);
+                    
+                    return true;
+                }
+                
+                return false;
+            }
+            
+            // Try adding the filter with interval
+            let attempts = 0;
+            const maxAttempts = 20;
+            
+            const addFilterInterval = setInterval(() => {
+                attempts++;
+                
+                if (attemptAddFilter()) {
+                    clearInterval(addFilterInterval);
+                    return;
+                }
+                
+                if (attempts >= maxAttempts) {
+                    clearInterval(addFilterInterval);
+                    console.warn('Failed to add HTTP method filter after', maxAttempts, 'attempts');
+                }
+            }, 200);
+        }
+
+        // Restore filter state
+        function restoreFilterState() {
+            const select = document.querySelector('#http-method-select');
+            if (select) {
+                const savedState = loadHttpMethodFilter();
+                if (savedState.selectedMethod) {
+                    select.value = savedState.selectedMethod;
+                    
+                    // Apply filter with a small delay for reliability
+                    setTimeout(() => {
+                        applyHttpMethodFilter();
+                    }, 200);
+                }
+            }
+        }
+
+        // Track URL changes to restore the filter
+        function setupUrlChangeDetection() {
+            let currentUrl = location.href;
+            
+            // Check URL changes every 100ms
+            setInterval(() => {
+                if (location.href !== currentUrl) {
+                    currentUrl = location.href;
+                    
+                    // Wait for new content to load and restore filter
+                    setTimeout(() => {
+                        restoreFilterState();
+                    }, 1000);
+                }
+            }, 100);
+            
+            // Additionally track DOM changes for reliability
+            const observer = new MutationObserver((mutations) => {
+                let shouldRestore = false;
+                
+                mutations.forEach((mutation) => {
+                    // Check if new operations were added
+                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                        mutation.addedNodes.forEach((node) => {
+                            if (node.nodeType === Node.ELEMENT_NODE) {
+                                // Check various selectors for operations
+                                if (node.classList && (
+                                    node.classList.contains('opblock') ||
+                                    node.classList.contains('operation-tag-content')
+                                )) {
+                                    shouldRestore = true;
+                                }
+                                if (node.querySelector && (
+                                    node.querySelector('.opblock') ||
+                                    node.querySelector('.operation-tag-content') ||
+                                    node.querySelector('[data-http-method]')
+                                )) {
+                                    shouldRestore = true;
+                                }
+                            }
+                        });
+                    }
+                });
+                
+                if (shouldRestore) {
+                    setTimeout(() => {
+                        restoreFilterState();
+                    }, 500);
+                }
+            });
+            
+            // Observe changes in the main container
+            const swaggerContainer = document.querySelector('#swagger-ui');
+            if (swaggerContainer) {
+                observer.observe(swaggerContainer, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+            
+            // Additionally apply the filter on window resize
+            window.addEventListener('resize', () => {
+                setTimeout(() => {
+                    applyHttpMethodFilter();
+                }, 100);
+            });
+        }
+
+        // Force apply the filter
+        function forceApplyFilter() {
+            // Wait for full DOM load
+            setTimeout(() => {
+                applyHttpMethodFilter();
+                
+                // Additional attempt after 1 second
+                setTimeout(() => {
+                    applyHttpMethodFilter();
+                }, 1000);
+                
+                // And again after 2 seconds for reliability
+                setTimeout(() => {
+                    applyHttpMethodFilter();
+                }, 2000);
+            }, 100);
+        }
+
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                url: '/openapi.json',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                validatorUrl: null,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl,
+                    HierarchicalTagsPlugin
+                ],
+                layout: "StandaloneLayout",
+                hierarchicalTagSeparator: /[:|]/,
+                docExpansion: "list",
+                filter: true,
+                showExtensions: true,
+                showCommonExtensions: true,
+                
+                onComplete: function() {
+                    console.log('Swagger UI loaded completely');
+                    
+                    // Load saved token
+                    const savedAuth = loadTokenFromStorage();
+                    if (savedAuth) {
+                        ui.authActions.authorize({
+                            OAuth2PasswordBearer: {
+                                name: 'OAuth2PasswordBearer',
+                                schema: {
+                                    type: 'oauth2',
+                                    flows: {
+                                        password: {
+                                            tokenUrl: 'token',
+                                            scopes: {}
+                                        }
+                                    }
+                                },
+                                value: savedAuth.token
+                            }
+                        });
+                    }
+                    
+                    // Add clear token button
+                    addClearTokenButton();
+                    
+                    // Add HTTP method filter
+                    addHttpMethodFilter();
+
+                    // Restore filter state on load
+                    restoreFilterState();
+
+                    // Track URL changes to restore filter
+                    setupUrlChangeDetection();
+                    
+                    // Force apply filter
+                    forceApplyFilter();
+                }
+            });
+
+            window.ui = ui;
+            
+            // Track authorization changes
+            const originalAuthorize = ui.authActions.authorize;
+            ui.authActions.authorize = function(data) {
+                const result = originalAuthorize.call(this, data);
+                if (data && data.OAuth2PasswordBearer && data.OAuth2PasswordBearer.value) {
+                    saveTokenToStorage(data.OAuth2PasswordBearer.value, 'Bearer');
+                }
+                return result;
+            };
+            
+            const originalLogout = ui.authActions.logout;
+            ui.authActions.logout = function(authNames) {
+                if (authNames && authNames.includes('OAuth2PasswordBearer')) {
+                    clearTokenFromStorage();
+                }
+                return originalLogout.call(this, authNames);
+            };
+        };
+
+        // Additional attempt to add filter on DOM load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Content Loaded');
+            // Remove multiple calls - filter will be added in onComplete
+        });
+        
+        // Handle window load event
+        window.addEventListener('load', function() {
+            console.log('Window loaded');
+            // Remove multiple calls - filter will be added in onComplete
+        });
+        
+        // Handle page visibility change event
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                // Page became visible, apply filter
+                setTimeout(() => {
+                    applyHttpMethodFilter();
+                }, 500);
+            }
+        });
+    </script>
+</body>
+</html>
