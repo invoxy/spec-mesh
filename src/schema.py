@@ -6,7 +6,6 @@ import httpx
 from config import config
 from loguru import logger
 from yaml import safe_load
-from dpath.util import get, set
 
 
 class Schema:
@@ -75,8 +74,8 @@ class SchemasMerger:
         """Merges component schemas from all services"""
         merged_schemas = {}
 
-        for service_name, source, schema in self.schemas:
-            schemas_dict = get(schema, "components/schemas") or {}
+        for service_name, _, schema in self.schemas:
+            schemas_dict = dpath.get(schema, "components/schemas") or {}
 
             for schema_name, schema_def in schemas_dict.items():
                 if schema_name in merged_schemas:
@@ -95,8 +94,8 @@ class SchemasMerger:
         """Merges paths from all services"""
         merged_paths = {}
 
-        for service_name, source, schema in self.schemas:
-            paths = get(schema, "paths") or {}
+        for service_name, _, schema in self.schemas:
+            paths = dpath.get(schema, "paths") or {}
 
             for path, methods in paths.items():
                 if path in merged_paths:
@@ -114,7 +113,7 @@ class SchemasMerger:
         merged_components = {}
 
         for service_name, source, schema in self.schemas:
-            components = get(schema, "components") or {}
+            components = dpath.get(schema, "components") or {}
 
             for component_type, component_data in components.items():
                 if component_type == "schemas":
@@ -143,7 +142,7 @@ class SchemasMerger:
         prepared_schema = schema.copy()
 
         # Get all paths
-        paths = get(prepared_schema, "paths") or {}
+        paths = dpath.get(prepared_schema, "paths") or {}
 
         for path, operations in paths.items():
             for operation in operations.values():
@@ -171,7 +170,6 @@ class SchemasMerger:
 
         # Process local tags in paths
         paths = dpath.get(schema, "paths", default={})
-        from pprint import pprint
 
         for operations in paths.values():
             for operation in operations.values():
@@ -213,34 +211,42 @@ class SchemasMerger:
             self.merged = first_schema.copy()
 
             # Set merged components
-            set(self.merged, "paths", self.merged_paths)
+            dpath.set(self.merged, "paths", self.merged_paths)
 
             # Create components if they don't exist
             if "components" not in self.merged:
-                set(self.merged, "components", {})
+                dpath.set(self.merged, "components", {})
 
             # Add schemas
-            set(self.merged, "components/schemas", self.merged_schemas)
+            dpath.set(self.merged, "components/schemas", self.merged_schemas)
 
             # Add remaining components
             for component_type, component_data in merged_components.items():
-                set(self.merged, f"components/{component_type}", component_data)
+                dpath.set(self.merged, f"components/{component_type}", component_data)
+
+            # Merge tags from all schemas
+            if self.grouping:
+                all_tags = []
+                for service_name, source, schema in self.schemas:
+                    if schema and "tags" in schema:
+                        all_tags.extend(schema["tags"])
+                dpath.set(self.merged, "tags", all_tags)
 
         # Update metadata using dpath
-        set(
+        dpath.set(
             self.merged,
             "info/title",
-            get(config, "settings/title") or "Merged API",
+            dpath.get(config, "settings/title", default="Merged API"),
         )
-        set(
+        dpath.set(
             self.merged,
             "info/description",
-            get(config, "settings/description") or "",
+            dpath.get(config, "settings/description", default=""),
         )
-        set(
+        dpath.set(
             self.merged,
             "info/version",
-            get(config, "settings/version") or "1.0.0",
+            dpath.get(config, "settings/version", default="1.0.0"),
         )
 
         return self.merged

@@ -5,9 +5,9 @@ from config import STATIC_DIR, config
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from jinja2 import Template
 from loguru import logger
 from schema import Schema, SchemasMerger
-from jinja2 import Template
 
 
 def set_docs(app: FastAPI, config: dict):

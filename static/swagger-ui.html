@@ -206,6 +206,29 @@
             }
         }
         
+        /* Logo styles */
+        .api-logo {
+            text-align: center;
+            display: none; /* Initially hidden */
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            margin: 20px;
+            margin-bottom: 0;
+        }
+        
+        .api-logo.show {
+            display: block;
+            opacity: 1;
+        }
+        
+        .api-logo img {
+            max-width: 100%;
+            height: 100px;
+            object-fit: contain;
+        }
+        
+        
+        
         /* Dark theme (if Swagger uses a dark theme) */
         .swagger-ui .http-method-filter select {
             background-color: white;
@@ -271,6 +294,16 @@
         
         /* Responsive styles for mobile devices */
         @media (max-width: 768px) {
+            .api-logo {
+
+            }
+            
+            .api-logo img {
+                height: 150px;
+            }
+            
+            
+            
             .http-method-filter {
                 margin-left: 10px;
                 margin-top: 10px;
@@ -290,6 +323,12 @@
 </head>
 
 <body>
+    <!-- API Logo Section -->
+    <div class="api-logo">
+        <img src="/swagger/image/Logotype.png" alt="API Logo" />
+        
+    </div>
+    
     <div id="swagger-ui"></div>
 
     <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
@@ -425,7 +464,7 @@
             // Save state
             saveHttpMethodFilter({ selectedMethod });
 
-            // Find all operation blocks using various selectors
+            // First, hide all operations that don't match the selected method
             const operations = document.querySelectorAll('.opblock, .operation-tag-content .opblock');
             
             operations.forEach(operation => {
@@ -465,6 +504,41 @@
                     opBlock.style.display = isVisible ? '' : 'none';
                 }
             });
+
+            // Now hide operation groups that have no visible operations
+            const operationGroups = document.querySelectorAll('.operation-tag-content');
+            operationGroups.forEach(group => {
+                const visibleOperations = group.querySelectorAll('.opblock[style*="display: none"]');
+                const totalOperations = group.querySelectorAll('.opblock');
+                
+                // If all operations in the group are hidden, hide the entire group
+                if (visibleOperations.length === totalOperations.length && totalOperations.length > 0) {
+                    group.style.display = 'none';
+                } else {
+                    // Show the group if it has at least one visible operation
+                    group.style.display = '';
+                }
+            });
+
+            // Also handle tag sections (main tag containers)
+            const tagSections = document.querySelectorAll('.tag');
+            tagSections.forEach(tagSection => {
+                const operationGroups = tagSection.querySelectorAll('.operation-tag-content');
+                let hasVisibleGroups = false;
+                
+                operationGroups.forEach(group => {
+                    if (group.style.display !== 'none') {
+                        hasVisibleGroups = true;
+                    }
+                });
+                
+                // If no operation groups are visible, hide the entire tag section
+                if (!hasVisibleGroups) {
+                    tagSection.style.display = 'none';
+                } else {
+                    tagSection.style.display = '';
+                }
+            });
         }
 
         // Reset HTTP method filter
@@ -473,6 +547,19 @@
             if (select) {
                 select.value = "";
                 applyHttpMethodFilter();
+                
+                // Show all operation groups and tag sections when filter is reset
+                setTimeout(() => {
+                    const operationGroups = document.querySelectorAll('.operation-tag-content');
+                    operationGroups.forEach(group => {
+                        group.style.display = '';
+                    });
+                    
+                    const tagSections = document.querySelectorAll('.tag');
+                    tagSections.forEach(tagSection => {
+                        tagSection.style.display = '';
+                    });
+                }, 100);
             }
         }
 
@@ -482,6 +569,19 @@
             if (select) {
                 select.value = ""; // Reset selection
                 applyHttpMethodFilter();
+                
+                // Show all operation groups and tag sections when all methods are selected
+                setTimeout(() => {
+                    const operationGroups = document.querySelectorAll('.operation-tag-content');
+                    operationGroups.forEach(group => {
+                        group.style.display = '';
+                    });
+                    
+                    const tagSections = document.querySelectorAll('.tag');
+                    tagSections.forEach(tagSection => {
+                        tagSection.style.display = '';
+                    });
+                }, 100);
             }
         }
 
@@ -529,6 +629,15 @@
             setTimeout(() => clearInterval(checkForAuthSection), 10000);
         }
 
+        // Show API logo after specification is loaded
+        function showApiLogo() {
+            const logoElement = document.querySelector('.api-logo');
+            if (logoElement) {
+                logoElement.classList.add('show');
+                console.log('API logo shown');
+            }
+        }
+        
         // Add HTTP method filter
         function addHttpMethodFilter() {
             // Check if the filter is already added
@@ -631,6 +740,7 @@
                     // Apply filter with a small delay for reliability
                     setTimeout(() => {
                         applyHttpMethodFilter();
+                        updateGroupVisibility();
                     }, 200);
                 }
             }
@@ -648,6 +758,7 @@
                     // Wait for new content to load and restore filter
                     setTimeout(() => {
                         restoreFilterState();
+                        updateGroupVisibility();
                     }, 1000);
                 }
             }, 100);
@@ -700,6 +811,7 @@
             window.addEventListener('resize', () => {
                 setTimeout(() => {
                     applyHttpMethodFilter();
+                    updateGroupVisibility();
                 }, 100);
             });
         }
@@ -709,17 +821,75 @@
             // Wait for full DOM load
             setTimeout(() => {
                 applyHttpMethodFilter();
+                updateGroupVisibility();
                 
                 // Additional attempt after 1 second
                 setTimeout(() => {
                     applyHttpMethodFilter();
+                    updateGroupVisibility();
                 }, 1000);
                 
                 // And again after 2 seconds for reliability
                 setTimeout(() => {
                     applyHttpMethodFilter();
+                    updateGroupVisibility();
                 }, 2000);
             }, 100);
+        }
+
+        // Update group visibility based on current filter state
+        function updateGroupVisibility() {
+            const select = document.querySelector('#http-method-select');
+            const selectedMethod = select ? select.value : "";
+            
+            if (!selectedMethod) {
+                // If no method is selected, show all groups
+                const operationGroups = document.querySelectorAll('.operation-tag-content');
+                operationGroups.forEach(group => {
+                    group.style.display = '';
+                });
+                
+                const tagSections = document.querySelectorAll('.tag');
+                tagSections.forEach(tagSection => {
+                    tagSection.style.display = '';
+                });
+                return;
+            }
+            
+            // Apply the filter logic for groups
+            const operationGroups = document.querySelectorAll('.operation-tag-content');
+            operationGroups.forEach(group => {
+                const visibleOperations = group.querySelectorAll('.opblock[style*="display: none"]');
+                const totalOperations = group.querySelectorAll('.opblock');
+                
+                // If all operations in the group are hidden, hide the entire group
+                if (visibleOperations.length === totalOperations.length && totalOperations.length > 0) {
+                    group.style.display = 'none';
+                } else {
+                    // Show the group if it has at least one visible operation
+                    group.style.display = '';
+                }
+            });
+
+            // Handle tag sections
+            const tagSections = document.querySelectorAll('.tag');
+            tagSections.forEach(tagSection => {
+                const operationGroups = tagSection.querySelectorAll('.operation-tag-content');
+                let hasVisibleGroups = false;
+                
+                operationGroups.forEach(group => {
+                    if (group.style.display !== 'none') {
+                        hasVisibleGroups = true;
+                    }
+                });
+                
+                // If no operation groups are visible, hide the entire tag section
+                if (!hasVisibleGroups) {
+                    tagSection.style.display = 'none';
+                } else {
+                    tagSection.style.display = '';
+                }
+            });
         }
 
         window.onload = function() {
@@ -745,6 +915,9 @@
                 
                 onComplete: function() {
                     console.log('Swagger UI loaded completely');
+                    
+                    // Show API logo after specification is loaded
+                    showApiLogo();
                     
                     // Load saved token
                     const savedAuth = loadTokenFromStorage();
@@ -822,6 +995,7 @@
                 // Page became visible, apply filter
                 setTimeout(() => {
                     applyHttpMethodFilter();
+                    updateGroupVisibility();
                 }, 500);
             }
         });
