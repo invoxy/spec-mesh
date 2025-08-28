@@ -16,14 +16,14 @@ class Schema:
             response = await client.get(url)
             content_type = response.headers.get("content-type", "").lower()
 
-            # OpenAPI спецификации (любого формата)
+            # OpenAPI specifications (any format)
             if "vnd.oai.openapi" in content_type:
                 try:
-                    return response.json()  # Пробуем JSON
+                    return response.json()  # Try JSON
                 except:
                     return safe_load(response.text)
 
-            # Обычные форматы
+            # Regular formats
             if "json" in content_type:
                 return response.json()
             if "yaml" in content_type:
@@ -36,10 +36,10 @@ class Schema:
         *,
         enabled: bool = True,
     ) -> list[tuple[str, dict]]:
-        """Получаем схемы с именами сервисов"""
+        """Get schemas with service names"""
         tasks = []
         for source in sources:
-            schema_url = source.get("schema")  # Используем 'schema' для загрузки схемы
+            schema_url = source.get("schema")  # Use 'schema' for loading schema
             name = source.get("name", str(uuid.uuid4())[:10])
             if source.get("enabled", enabled):
                 tasks.append((name, source, __class__.get_schema(schema_url)))
@@ -48,14 +48,14 @@ class Schema:
             *[task[2] for task in tasks], return_exceptions=True
         )
 
-        # Фильтруем ошибки и возвращаем кортежи (имя, source, схема)
+        # Filter errors and return tuples (name, source, schema)
         schemas = []
         for i, (name, source, task) in enumerate(tasks):
             result = results[i]
             if isinstance(result, Exception):
-                logger.error(f"Ошибка загрузки {name} ({task}): {result}")
+                logger.error(f"Error loading {name} ({task}): {result}")
             elif result is None:
-                logger.error(f"Схема {name} не загрузилась (результат None)")
+                logger.error(f"Schema {name} failed to load (result is None)")
             else:
                 schemas.append((name, source, result))
 
@@ -72,7 +72,7 @@ class SchemasMerger:
         self.merged_schemas = {}
 
     def _merge_schemas(self) -> dict:
-        """Объединяет схемы компонентов из всех сервисов"""
+        """Merges component schemas from all services"""
         merged_schemas = {}
 
         for service_name, source, schema in self.schemas:
@@ -80,10 +80,10 @@ class SchemasMerger:
 
             for schema_name, schema_def in schemas_dict.items():
                 if schema_name in merged_schemas:
-                    # Разрешаем конфликты схем
+                    # Resolve schema conflicts
                     new_name = f"{schema_name}_{service_name}"
                     logger.warning(
-                        f"Схема {schema_name} конфликтует, переименовываю в {new_name}"
+                        f"Schema {schema_name} conflicts, renaming to {new_name}"
                     )
                     merged_schemas[new_name] = schema_def
                 else:
@@ -92,7 +92,7 @@ class SchemasMerger:
         return merged_schemas
 
     def _merge_paths(self) -> dict:
-        """Объединяет пути из всех сервисов"""
+        """Merges paths from all services"""
         merged_paths = {}
 
         for service_name, source, schema in self.schemas:
@@ -100,11 +100,9 @@ class SchemasMerger:
 
             for path, methods in paths.items():
                 if path in merged_paths:
-                    # Разрешаем конфликты путей
+                    # Resolve path conflicts
                     new_path = f"{path}_{service_name}"
-                    logger.warning(
-                        f"Путь {path} конфликтует, переименовываю в {new_path}"
-                    )
+                    logger.warning(f"Path {path} conflicts, renaming to {new_path}")
                     merged_paths[new_path] = methods
                 else:
                     merged_paths[path] = methods
@@ -112,7 +110,7 @@ class SchemasMerger:
         return merged_paths
 
     def _merge_components(self) -> dict:
-        """Объединяет все компоненты из всех сервисов"""
+        """Merges all components from all services"""
         merged_components = {}
 
         for service_name, source, schema in self.schemas:
@@ -120,7 +118,7 @@ class SchemasMerger:
 
             for component_type, component_data in components.items():
                 if component_type == "schemas":
-                    # Схемы обрабатываются отдельно в _merge_schemas
+                    # Schemas are processed separately in _merge_schemas
                     continue
 
                 if component_type not in merged_components:
@@ -129,10 +127,10 @@ class SchemasMerger:
                 if isinstance(component_data, dict):
                     for name, definition in component_data.items():
                         if name in merged_components[component_type]:
-                            # Разрешаем конфликты
+                            # Resolve conflicts
                             new_name = f"{name}_{service_name}"
                             logger.warning(
-                                f"Компонент {component_type}/{name} конфликтует, переименовываю в {new_name}"
+                                f"Component {component_type}/{name} conflicts, renaming to {new_name}"
                             )
                             merged_components[component_type][new_name] = definition
                         else:
@@ -141,20 +139,20 @@ class SchemasMerger:
         return merged_components
 
     def _prepare_server_for_schema(self, schema: dict, *, url: str) -> dict:
-        """Добавляет сервер во все операции схемы"""
+        """Adds server to all operations in the schema"""
         prepared_schema = schema.copy()
 
-        # Получаем все пути
+        # Get all paths
         paths = get(prepared_schema, "paths") or {}
 
         for path, operations in paths.items():
             for operation in operations.values():
                 if isinstance(operation, dict):
-                    # Добавляем сервер к операции
+                    # Add server to operation
                     if "servers" not in operation:
                         operation["servers"] = []
 
-                    # Проверяем, нет ли уже такого сервера
+                    # Check if server already exists
                     server_exists = any(
                         server.get("url") == url for server in operation["servers"]
                     )
@@ -165,13 +163,13 @@ class SchemasMerger:
         return prepared_schema
 
     def _prepare_grouping(self, schema: dict, *, name: str) -> dict:
-        """Добавляет имя сервиса к тегам схемы для группировки"""
+        """Adds service name to schema tags for grouping"""
         global_tags = dpath.get(schema, "tags", default=[])
         for tag in global_tags:
             tag["name"] = f"{name} | {tag['name']}"
         dpath.set(schema, "tags", global_tags)
 
-        # Обрабатываем локальные теги в путях
+        # Process local tags in paths
         paths = dpath.get(schema, "paths", default={})
         from pprint import pprint
 
@@ -184,51 +182,51 @@ class SchemasMerger:
         return schema
 
     def merge(self) -> dict:
-        """Основной метод объединения схем"""
+        """Main method for merging schemas"""
         if not self.schemas:
             return {}
 
-        # Подготавливаем схемы с серверами
+        # Prepare schemas with servers
         for service_name, source, schema in self.schemas:
             if schema is None:
-                logger.warning(f"Пропускаем {service_name} - схема не загрузилась")
+                logger.warning(f"Skipping {service_name} - schema failed to load")
                 continue
 
             logger.info(f"=== {service_name} ===")
-            logger.info(f"Добавляем сервер {source.get('url')} к схеме")
+            logger.info(f"Adding server {source.get('url')} to schema")
             schema = self._prepare_server_for_schema(schema, url=source.get("url"))
 
-            # Если включена группировка, добавляем имя сервиса к тегам
+            # If grouping is enabled, add service name to tags
             if self.grouping:
                 schema = self._prepare_grouping(schema, name=service_name)
 
-        # Объединяем все компоненты
+        # Merge all components
         self.merged_paths = self._merge_paths()
         self.merged_schemas = self._merge_schemas()
         merged_components = self._merge_components()
 
-        # Собираем финальную схему
+        # Build final schema
         if self.schemas:
             first_schema = self.schemas[0][
                 2
-            ]  # Берем схему из кортежа (name, source, schema)
+            ]  # Get schema from tuple (name, source, schema)
             self.merged = first_schema.copy()
 
-            # Устанавливаем объединенные компоненты
+            # Set merged components
             set(self.merged, "paths", self.merged_paths)
 
-            # Создаем компоненты если их нет
+            # Create components if they don't exist
             if "components" not in self.merged:
                 set(self.merged, "components", {})
 
-            # Добавляем схемы
+            # Add schemas
             set(self.merged, "components/schemas", self.merged_schemas)
 
-            # Добавляем остальные компоненты
+            # Add remaining components
             for component_type, component_data in merged_components.items():
                 set(self.merged, f"components/{component_type}", component_data)
 
-        # Обновляем метаинформацию с помощью dpath
+        # Update metadata using dpath
         set(
             self.merged,
             "info/title",

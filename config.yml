@@ -8,7 +8,6 @@ sources:
     url: http://localhost:8023/
     schema: http://localhost:8023/api/schema/
     enabled: true
-    priority: 1
 
   - name: Upload Datamart
     url: http://localhost:8024/
