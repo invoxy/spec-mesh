@@ -1,17 +1,7 @@
 sources:
-  - name: Culture (Test)
-    url: http://192.168.50.101:8023/
-    schema: http://192.168.50.101:8023/api/schema/
-    enabled: true
-
-  - name: Culture (Local)
-    url: http://localhost:8023/
-    schema: http://localhost:8023/api/schema/
-    enabled: true
-
-  - name: Upload Datamart
-    url: http://localhost:8024/
-    schema: http://localhost:8024/openapi.json
+  - name: test
+    url: http://127.0.0.1:8000/
+    schema: http://127.0.0.1:8000/openapi.json
     enabled: true
 
 settings:
@@ -19,4 +9,4 @@ settings:
   description: Merged API description
   version: 1.0.0
   grouping: true
-  proxy: true
+  proxy: false

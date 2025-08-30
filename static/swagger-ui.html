@@ -174,6 +174,82 @@
             border-left: 3px solid #9012fe;
         }
         
+        /* Security status filter styles */
+        .security-status-filter {
+            display: inline-flex;
+            align-items: center;
+            margin-left: 15px;
+            padding: 0;
+            background: none;
+            border: none;
+            position: relative;
+        }
+        
+        .security-status-filter .filter-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        
+        .security-status-filter select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            min-width: 120px;
+            padding: 6px 32px 6px 12px;
+            border: 1px solid #e3e3e3;
+            border-radius: 4px;
+            background: white url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Cpath fill='%23666' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 8px center;
+            background-size: 16px;
+            font-size: 13px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            color: #333;
+            cursor: pointer;
+            height: 32px;
+            line-height: 1;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        
+        .security-status-filter select:hover {
+            border-color: #b3b3b3;
+            background-color: #f8f9fa;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .security-status-filter select:focus {
+            outline: none;
+            border-color: #4990e2;
+            background-color: white;
+            box-shadow: 0 0 0 3px rgba(73, 144, 226, 0.1);
+        }
+        
+        .security-status-filter select option {
+            padding: 8px 12px;
+            font-size: 13px;
+            background: white;
+            color: #333;
+            border: none;
+        }
+        
+        .security-status-filter select option:hover {
+            background: #f8f9fa;
+        }
+        
+        .security-status-filter select option:checked {
+            background: #4990e2;
+            color: white;
+        }
+        
+        /* Styles for security status options with color coding */
+        .security-status-filter select option[value="public"] {
+            border-left: 3px solid #28a745;
+        }
+        
+        .security-status-filter select option[value="secure"] {
+            border-left: 3px solid #dc3545;
+        }
+        
         /* Styles for integration with the existing Swagger filter */
         .swagger-ui .filter {
             display: flex;
@@ -181,7 +257,8 @@
             gap: 15px;
         }
         
-        .swagger-ui .filter .http-method-filter {
+        .swagger-ui .filter .http-method-filter,
+        .swagger-ui .filter .security-status-filter {
             margin-left: 0;
         }
         
@@ -225,6 +302,77 @@
             max-width: 100%;
             height: 100px;
             object-fit: contain;
+        }
+        
+        /* Security status styles */
+        .security-status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-left: 8px;
+            vertical-align: middle;
+            line-height: 1.2;
+        }
+        
+        .security-status.public {
+            background-color: #28a745;
+            color: white;
+            border: 1px solid #28a745;
+        }
+        
+        .security-status.secure {
+            background-color: #dc3545;
+            color: white;
+            border: 1px solid #dc3545;
+        }
+        
+        /* Position security status in operation summary */
+        .opblock-summary-description {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .opblock-summary-description .description-text {
+            flex: 1;
+        }
+        
+        .opblock-summary-description .security-status {
+            flex-shrink: 0;
+            margin-left: 12px;
+        }
+        
+        /* Alternative positioning for different Swagger UI versions */
+        .opblock-summary-operation-id {
+            position: relative;
+        }
+        
+        .opblock-summary-operation-id .security-status {
+            position: absolute;
+            right: -80px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .security-status {
+                font-size: 10px;
+                padding: 1px 6px;
+                margin-left: 6px;
+            }
+            
+            .opblock-summary-description .security-status {
+                margin-left: 8px;
+            }
+            
+            .opblock-summary-operation-id .security-status {
+                right: -70px;
+            }
         }
         
         
@@ -340,6 +488,209 @@
         const TOKEN_STORAGE_KEY = 'swagger_auth_token';
         const TOKEN_TYPE_STORAGE_KEY = 'swagger_auth_token_type';
         const HTTP_METHOD_FILTER_KEY = 'swagger_http_method_filter';
+        const SECURITY_STATUS_FILTER_KEY = 'swagger_security_status_filter';
+
+        // Security status helpers
+        function isOperationSecure(operation) {
+            // Check if operation has explicit security requirements
+            if (operation.security && operation.security.length > 0) {
+                // Check if any security scheme is required
+                return operation.security.some(security => {
+                    if (typeof security === 'object') {
+                        return Object.keys(security).length > 0;
+                    }
+                    return false;
+                });
+            }
+            
+            // Check global security
+            if (window.swaggerSpec && window.swaggerSpec.security && window.swaggerSpec.security.length > 0) {
+                return window.swaggerSpec.security.some(security => {
+                    if (typeof security === 'object') {
+                        return Object.keys(security).length > 0;
+                    }
+                    return false;
+                });
+            }
+            
+            // Check if operation has any security-related parameters
+            if (operation.parameters) {
+                const hasAuthParams = operation.parameters.some(param => {
+                    return param.in === 'header' && 
+                           (param.name.toLowerCase().includes('authorization') || 
+                            param.name.toLowerCase().includes('token') ||
+                            param.name.toLowerCase().includes('api-key') ||
+                            param.name.toLowerCase().includes('x-api-key'));
+                });
+                if (hasAuthParams) return true;
+            }
+            
+            // Check if operation has security schemes in components
+            if (window.swaggerSpec && window.swaggerSpec.components && window.swaggerSpec.components.securitySchemes) {
+                const securitySchemes = Object.keys(window.swaggerSpec.components.securitySchemes);
+                if (securitySchemes.length > 0) {
+                    // If there are security schemes defined, check if this operation might use them
+                    // This is a heuristic - if operation has no explicit security but schemes exist, it might be secure
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+
+        function getOperationSecurityStatus(operationElement) {
+            // Check if status element exists
+            const statusElement = operationElement.querySelector('.security-status');
+            if (statusElement) {
+                if (statusElement.classList.contains('secure')) {
+                    return 'secure';
+                } else if (statusElement.classList.contains('public')) {
+                    return 'public';
+                }
+            }
+            
+            // Fallback: try to determine from operation data
+            const operationData = getOperationData(operationElement);
+            if (operationData) {
+                return isOperationSecure(operationData) ? 'secure' : 'public';
+            }
+            
+            return 'public'; // Default to public if can't determine
+        }
+
+        function addSecurityStatusToOperation(operationElement) {
+            // Check if status is already added
+            if (operationElement.querySelector('.security-status')) {
+                return;
+            }
+            
+            // Find operation ID or description element
+            const operationId = operationElement.querySelector('.opblock-summary-operation-id');
+            const description = operationElement.querySelector('.opblock-summary-description');
+            
+            // Get operation data from Swagger UI
+            const operationData = getOperationData(operationElement);
+            if (!operationData) return;
+            
+            // Determine security status
+            const isSecure = isOperationSecure(operationData);
+            const statusClass = isSecure ? 'secure' : 'public';
+            const statusText = isSecure ? 'SECURE' : 'PUBLIC';
+            
+            // Create status element
+            const statusElement = document.createElement('span');
+            statusElement.className = `security-status ${statusClass}`;
+            statusElement.textContent = statusText;
+            statusElement.title = isSecure ? 'Requires authentication' : 'Public access';
+            
+            // Add status to the best available location
+            if (description) {
+                // If description exists, add status to it
+                const descriptionText = description.querySelector('.description-text');
+                if (!descriptionText) {
+                    // Create description text wrapper if it doesn't exist
+                    const textWrapper = document.createElement('span');
+                    textWrapper.className = 'description-text';
+                    textWrapper.innerHTML = description.innerHTML;
+                    description.innerHTML = '';
+                    description.appendChild(textWrapper);
+                }
+                description.appendChild(statusElement);
+            } else if (operationId) {
+                // If no description, add status to operation ID
+                operationId.appendChild(statusElement);
+            }
+        }
+
+        function getOperationData(operationElement) {
+            // Try to get operation data from various sources
+            const operationId = operationElement.querySelector('.opblock-summary-operation-id');
+            if (operationId) {
+                const id = operationId.textContent.trim();
+                
+                // Try to find operation in Swagger spec
+                if (window.swaggerSpec && window.swaggerSpec.paths) {
+                    for (const path in window.swaggerSpec.paths) {
+                        const pathItem = window.swaggerSpec.paths[path];
+                        for (const method in pathItem) {
+                            if (method === 'get' || method === 'post' || method === 'put' || 
+                                method === 'delete' || method === 'patch' || method === 'head') {
+                                const operation = pathItem[method];
+                                if (operation.operationId === id) {
+                                    return operation;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Fallback: try to get data from data attributes or method
+            const methodElement = operationElement.querySelector('.opblock-summary-method');
+            if (methodElement) {
+                const method = methodElement.textContent.trim().toLowerCase();
+                
+                // Try to find path from parent elements
+                let path = null;
+                let currentElement = operationElement;
+                
+                // Look for path in parent elements
+                while (currentElement && !path) {
+                    path = currentElement.getAttribute('data-path') || 
+                           currentElement.getAttribute('data-url') ||
+                           currentElement.querySelector('[data-path]')?.getAttribute('data-path') ||
+                           currentElement.querySelector('[data-url]')?.getAttribute('data-url');
+                    currentElement = currentElement.parentElement;
+                }
+                
+                if (path && window.swaggerSpec && window.swaggerSpec.paths && window.swaggerSpec.paths[path]) {
+                    return window.swaggerSpec.paths[path][method];
+                }
+            }
+            
+            return null;
+        }
+
+        function addSecurityStatusesToAllOperations() {
+            const operations = document.querySelectorAll('.opblock');
+            operations.forEach(operation => {
+                addSecurityStatusToOperation(operation);
+            });
+        }
+
+        function setupSecurityStatusObserver() {
+            // Observe DOM changes to add security statuses to new operations
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.type === 'childList') {
+                        mutation.addedNodes.forEach((node) => {
+                            if (node.nodeType === Node.ELEMENT_NODE) {
+                                // Check if added node is an operation
+                                if (node.classList && node.classList.contains('opblock')) {
+                                    addSecurityStatusToOperation(node);
+                                }
+                                // Check if added node contains operations
+                                if (node.querySelectorAll) {
+                                    const operations = node.querySelectorAll('.opblock');
+                                    operations.forEach(operation => {
+                                        addSecurityStatusToOperation(operation);
+                                    });
+                                }
+                            }
+                        });
+                    }
+                });
+            });
+            
+            // Observe the main Swagger UI container
+            const swaggerContainer = document.querySelector('#swagger-ui');
+            if (swaggerContainer) {
+                observer.observe(swaggerContainer, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+        }
 
         // Token helpers
         function saveTokenToStorage(token, tokenType = 'Bearer') {
@@ -394,6 +745,30 @@
             };
         }
 
+        // Security status filter helpers
+        function saveSecurityStatusFilter(filterState) {
+            try {
+                localStorage.setItem(SECURITY_STATUS_FILTER_KEY, JSON.stringify(filterState));
+            } catch (e) {
+                // Filter was not saved
+            }
+        }
+
+        function loadSecurityStatusFilter() {
+            try {
+                const saved = localStorage.getItem(SECURITY_STATUS_FILTER_KEY);
+                return saved ? JSON.parse(saved) : getDefaultSecurityFilterState();
+            } catch (e) {
+                return getDefaultSecurityFilterState();
+            }
+        }
+
+        function getDefaultSecurityFilterState() {
+            return {
+                selectedStatus: ""
+            };
+        }
+
         // Initialize HTTP method filter
         function initializeHttpMethodFilter() {
             const select = document.querySelector('#http-method-select');
@@ -420,6 +795,34 @@
             }, 100);
             
             console.log('HTTP method filter initialized successfully');
+        }
+
+        // Initialize security status filter
+        function initializeSecurityStatusFilter() {
+            const select = document.querySelector('#security-status-select');
+            if (!select) {
+                console.warn('Security status filter select not found');
+                return;
+            }
+            
+            // Load saved state
+            const savedState = loadSecurityStatusFilter();
+            if (savedState.selectedStatus) {
+                select.value = savedState.selectedStatus;
+            }
+
+            // Apply filter when selection changes
+            select.addEventListener('change', function() {
+                console.log('Security status filter changed to:', this.value);
+                applySecurityStatusFilter();
+            });
+            
+            // Apply filter right after initialization
+            setTimeout(() => {
+                applySecurityStatusFilter();
+            }, 100);
+            
+            console.log('Security status filter initialized successfully');
         }
 
         // Create HTTP method filter (kept for compatibility)
@@ -451,6 +854,37 @@
             // Apply filter on change
             select.addEventListener('change', function() {
                 applyHttpMethodFilter();
+            });
+
+            return filterContainer;
+        }
+
+        // Create security status filter
+        function createSecurityStatusFilter() {
+            const filterContainer = document.createElement('div');
+            filterContainer.className = 'security-status-filter';
+            filterContainer.innerHTML = `
+                <div class="filter-wrapper">
+                    <select id="security-status-select" title="Filter by security status">
+                        <option value="">All statuses</option>
+                        <option value="public">Public</option>
+                        <option value="secure">Secure</option>
+                    </select>
+                </div>
+            `;
+
+            // Load saved state
+            const savedState = loadSecurityStatusFilter();
+            const select = filterContainer.querySelector('#security-status-select');
+            
+            // Set saved value
+            if (savedState.selectedStatus) {
+                select.value = savedState.selectedStatus;
+            }
+
+            // Apply filter on change
+            select.addEventListener('change', function() {
+                applySecurityStatusFilter();
             });
 
             return filterContainer;
@@ -539,6 +973,25 @@
                     tagSection.style.display = '';
                 }
             });
+
+            // Update security statuses after filter is applied
+            setTimeout(() => {
+                updateSecurityStatuses();
+            }, 100);
+        }
+
+        // Update security statuses for visible operations
+        function updateSecurityStatuses() {
+            const visibleOperations = document.querySelectorAll('.opblock:not([style*="display: none"])');
+            visibleOperations.forEach(operation => {
+                // Remove existing status if any
+                const existingStatus = operation.querySelector('.security-status');
+                if (existingStatus) {
+                    existingStatus.remove();
+                }
+                // Add new status
+                addSecurityStatusToOperation(operation);
+            });
         }
 
         // Reset HTTP method filter
@@ -559,6 +1012,9 @@
                     tagSections.forEach(tagSection => {
                         tagSection.style.display = '';
                     });
+                    
+                    // Update security statuses
+                    updateSecurityStatuses();
                 }, 100);
             }
         }
@@ -581,6 +1037,9 @@
                     tagSections.forEach(tagSection => {
                         tagSection.style.display = '';
                     });
+                    
+                    // Update security statuses
+                    updateSecurityStatuses();
                 }, 100);
             }
         }
@@ -741,6 +1200,7 @@
                     setTimeout(() => {
                         applyHttpMethodFilter();
                         updateGroupVisibility();
+                        updateSecurityStatuses();
                     }, 200);
                 }
             }
@@ -759,6 +1219,7 @@
                     setTimeout(() => {
                         restoreFilterState();
                         updateGroupVisibility();
+                        updateSecurityStatuses();
                     }, 1000);
                 }
             }, 100);
@@ -794,6 +1255,7 @@
                 if (shouldRestore) {
                     setTimeout(() => {
                         restoreFilterState();
+                        updateSecurityStatuses();
                     }, 500);
                 }
             });
@@ -812,6 +1274,7 @@
                 setTimeout(() => {
                     applyHttpMethodFilter();
                     updateGroupVisibility();
+                    updateSecurityStatuses();
                 }, 100);
             });
         }
@@ -822,17 +1285,20 @@
             setTimeout(() => {
                 applyHttpMethodFilter();
                 updateGroupVisibility();
+                updateSecurityStatuses();
                 
                 // Additional attempt after 1 second
                 setTimeout(() => {
                     applyHttpMethodFilter();
                     updateGroupVisibility();
+                    updateSecurityStatuses();
                 }, 1000);
                 
                 // And again after 2 seconds for reliability
                 setTimeout(() => {
                     applyHttpMethodFilter();
                     updateGroupVisibility();
+                    updateSecurityStatuses();
                 }, 2000);
             }, 100);
         }
@@ -893,6 +1359,24 @@
         }
 
         window.onload = function() {
+            // Load OpenAPI specification first
+            fetch('/openapi.json')
+                .then(response => response.json())
+                .then(spec => {
+                    window.swaggerSpec = spec;
+                    console.log('OpenAPI specification loaded');
+                    
+                    // Initialize Swagger UI after spec is loaded
+                    initializeSwaggerUI();
+                })
+                .catch(error => {
+                    console.error('Failed to load OpenAPI specification:', error);
+                    // Initialize Swagger UI anyway
+                    initializeSwaggerUI();
+                });
+        };
+
+        function initializeSwaggerUI() {
             const ui = SwaggerUIBundle({
                 url: '/openapi.json',
                 dom_id: '#swagger-ui',
@@ -953,6 +1437,10 @@
                     
                     // Force apply filter
                     forceApplyFilter();
+
+                    // Add security statuses to all operations
+                    addSecurityStatusesToAllOperations();
+                    setupSecurityStatusObserver();
                 }
             });
 
@@ -996,6 +1484,7 @@
                 setTimeout(() => {
                     applyHttpMethodFilter();
                     updateGroupVisibility();
+                    updateSecurityStatuses();
                 }, 500);
             }
         });
