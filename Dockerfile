@@ -27,7 +27,7 @@ RUN chmod +x start.sh
 # Create directory for Caddy config
 RUN mkdir -p /etc/caddy
 
-EXPOSE 8000 
+EXPOSE 17045
 
 ENV CADDY_AVAILABLE=true
 

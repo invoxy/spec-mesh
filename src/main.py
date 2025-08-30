@@ -20,4 +20,4 @@ async def lifespan(app: FastAPI):
 app = FastAPI(openapi_url=None, lifespan=lifespan)
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8010, reload=True, log_level="debug")  # noqa: S104
+    uvicorn.run("main:app", host="0.0.0.0", port=17045, reload=True, log_level="debug")  # noqa: S104
