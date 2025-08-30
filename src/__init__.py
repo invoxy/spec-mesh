@@ -205,63 +205,14 @@ def _generate_caddyfile(sources: list):
 
 def _create_safe_name(name: str) -> str:
     """Create URL-safe name by removing/replacing special characters"""
-    import re
-
-    # Replace spaces, parentheses, and other special characters with underscores
-    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name)
-    # Remove multiple consecutive underscores
-    safe_name = re.sub(r"_+", "_", safe_name)
-    # Remove leading and trailing underscores
-    safe_name = safe_name.strip("_")
-    # Convert to lowercase
-    safe_name = safe_name.lower()
-    return safe_name
+    from openapi_merger.openapi_merger import safe_name
+    return safe_name(name)
 
 
 def _check_caddy_availability() -> bool:
     """Check if Caddy is available (running in container or system)"""
-    import os
-    import subprocess
-    import socket
-
-    # Method 1: Check if running in Docker container with Caddy
-    if os.path.exists("/.dockerenv"):
-        try:
-            # Try to connect to Caddy's admin API or check if Caddy process exists
-            result = subprocess.run(
-                ["pgrep", "-f", "caddy"], capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0:
-                return True
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-    # Method 2: Check if Caddy port is accessible
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)
-        result = sock.connect_ex(("localhost", 80))  # Caddy default port
-        sock.close()
-        if result == 0:
-            return True
-    except:
-        pass
-
-    # Method 3: Check environment variables (for Docker Compose)
-    if os.environ.get("CADDY_AVAILABLE") == "true":
-        return True
-
-    # Method 4: Check if Caddy binary exists
-    try:
-        result = subprocess.run(
-            ["which", "caddy"], capture_output=True, text=True, timeout=5
-        )
-        if result.returncode == 0:
-            return True
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-
-    return False
+    from openapi_merger.openapi_merger import is_caddy_available
+    return is_caddy_available()
 
 
 def set_logger():
