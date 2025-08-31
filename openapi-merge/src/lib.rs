@@ -79,14 +79,18 @@ fn is_caddy_available() -> bool {
 // === Новые оптимизированные функции ===
 
 #[pyfunction]
-fn prepare_server_for_schema_rust(schema_json: &str, url: &str, source_name: Option<&str>) -> PyResult<String> {
+fn prepare_server_for_schema_rust(
+    schema_json: &str,
+    url: &str,
+    source_name: Option<&str>,
+) -> PyResult<String> {
     let mut schema: Value = serde_json::from_str(schema_json).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to parse schema: {}", e))
     })?;
 
-    let proxy_enabled = std::env::var("PROXY_ENABLED").unwrap_or_default() == "true" || 
-                       std::env::var("PROXY").unwrap_or_default() == "true";
-    
+    let proxy_enabled = std::env::var("PROXY_ENABLED").unwrap_or_default() == "true"
+        || std::env::var("PROXY").unwrap_or_default() == "true";
+
     // Оптимизированная обработка путей
     if let Some(paths) = schema.get_mut("paths").and_then(|v| v.as_object_mut()) {
         for operations in paths.values_mut() {
@@ -124,7 +128,10 @@ fn prepare_server_for_schema_rust(schema_json: &str, url: &str, source_name: Opt
     }
 
     serde_json::to_string(&schema).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to serialize schema: {}", e))
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Failed to serialize schema: {}",
+            e
+        ))
     })
 }
 
@@ -168,12 +175,20 @@ fn prepare_grouping_rust(schema_json: &str, name: &str) -> PyResult<String> {
     }
 
     serde_json::to_string(&schema).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to serialize schema: {}", e))
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Failed to serialize schema: {}",
+            e
+        ))
     })
 }
 
 #[pyfunction]
-fn update_schema_metadata_rust(schema_json: &str, title: &str, description: &str, version: &str) -> PyResult<String> {
+fn update_schema_metadata_rust(
+    schema_json: &str,
+    title: &str,
+    description: &str,
+    version: &str,
+) -> PyResult<String> {
     let mut schema: Value = serde_json::from_str(schema_json).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to parse schema: {}", e))
     })?;
@@ -194,7 +209,10 @@ fn update_schema_metadata_rust(schema_json: &str, title: &str, description: &str
     schema["openapi"] = json!("3.1.0");
 
     serde_json::to_string(&schema).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to serialize schema: {}", e))
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Failed to serialize schema: {}",
+            e
+        ))
     })
 }
 
@@ -253,7 +271,10 @@ fn process_sources_rust(sources: &PyList, enabled: bool) -> PyResult<Vec<PyObjec
 fn get_schema_sync(url: &str) -> PyResult<PyObject> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let result = rt.block_on(async {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| e.to_string())?;
         let response = client.get(url).send().await.map_err(|e| e.to_string())?;
         let content_type = response
             .headers()
@@ -497,29 +518,29 @@ fn merge_schemas_sync(schemas: &PyList, grouping: bool) -> PyResult<PyObject> {
 #[pyfunction]
 fn process_schemas_batch_rust(schemas_data: &PyList, grouping: bool) -> PyResult<Vec<String>> {
     let mut processed_schemas = Vec::new();
-    
+
     for schema_item in schemas_data.iter() {
         let dict = schema_item.downcast::<PyDict>().map_err(|_| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>("Each schema must be a dict")
         })?;
-        
+
         let name: String = dict.get_item("name").unwrap().extract()?;
         let url: String = dict.get_item("url").unwrap().extract()?;
         let schema_json: String = dict.get_item("schema_data").unwrap().extract()?;
-        
+
         // Обрабатываем схему с серверами
         let schema_with_servers = prepare_server_for_schema_rust(&schema_json, &url, Some(&name))?;
-        
+
         // Если включена группировка, добавляем префикс к тегам
         let final_schema = if grouping {
             prepare_grouping_rust(&schema_with_servers, &name)?
         } else {
             schema_with_servers
         };
-        
+
         processed_schemas.push(final_schema);
     }
-    
+
     Ok(processed_schemas)
 }
 
@@ -528,11 +549,11 @@ fn get_config_value_rust(config_json: &str, path: &str, default_value: &str) -> 
     let config: Value = serde_json::from_str(config_json).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to parse config: {}", e))
     })?;
-    
+
     // Простое извлечение значения по пути (например, "settings/title")
     let path_parts: Vec<&str> = path.split('/').collect();
     let mut current = &config;
-    
+
     for part in path_parts {
         if let Some(obj) = current.as_object() {
             if let Some(value) = obj.get(part) {
@@ -544,7 +565,7 @@ fn get_config_value_rust(config_json: &str, path: &str, default_value: &str) -> 
             return Ok(default_value.to_string());
         }
     }
-    
+
     if let Some(str_val) = current.as_str() {
         Ok(str_val.to_string())
     } else {
@@ -554,30 +575,29 @@ fn get_config_value_rust(config_json: &str, path: &str, default_value: &str) -> 
 
 #[pyfunction]
 fn validate_schema_rust(schema_json: &str) -> PyResult<bool> {
-    let schema: Value = serde_json::from_str(schema_json).map_err(|_| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid JSON format")
-    })?;
-    
+    let schema: Value = serde_json::from_str(schema_json)
+        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid JSON format"))?;
+
     // Базовая валидация OpenAPI схемы
     if !schema.is_object() {
         return Ok(false);
     }
-    
+
     let obj = schema.as_object().unwrap();
-    
+
     // Проверяем обязательные поля
     if !obj.contains_key("openapi") && !obj.contains_key("swagger") {
         return Ok(false);
     }
-    
+
     if !obj.contains_key("info") {
         return Ok(false);
     }
-    
+
     if !obj.contains_key("paths") {
         return Ok(false);
     }
-    
+
     // Проверяем info секцию
     if let Some(info) = obj.get("info") {
         if let Some(info_obj) = info.as_object() {
@@ -590,7 +610,7 @@ fn validate_schema_rust(schema_json: &str) -> PyResult<bool> {
     } else {
         return Ok(false);
     }
-    
+
     // Проверяем paths секцию
     if let Some(paths) = obj.get("paths") {
         if !paths.is_object() {
@@ -599,7 +619,7 @@ fn validate_schema_rust(schema_json: &str) -> PyResult<bool> {
     } else {
         return Ok(false);
     }
-    
+
     Ok(true)
 }
 
@@ -623,8 +643,8 @@ fn add_servers_to_schema(schema: &Value, url: &str, service_name: &str) -> Value
                             {
                                 let mut server_obj = json!({"url": url});
                                 let proxy_enabled =
-                                    std::env::var("PROXY_ENABLED").unwrap_or_default() == "true" ||
-                                    std::env::var("PROXY").unwrap_or_default() == "true";
+                                    std::env::var("PROXY_ENABLED").unwrap_or_default() == "true"
+                                        || std::env::var("PROXY").unwrap_or_default() == "true";
 
                                 if proxy_enabled && is_caddy_available() {
                                     let safe = safe_name_internal(service_name);
@@ -734,7 +754,7 @@ fn openapi_merger(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(merge_schemas_sync, m)?)?;
     m.add_function(wrap_pyfunction!(safe_name, m)?)?;
     m.add_function(wrap_pyfunction!(is_caddy_available, m)?)?;
-    
+
     // Новые оптимизированные функции
     m.add_function(wrap_pyfunction!(prepare_server_for_schema_rust, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_grouping_rust, m)?)?;
@@ -745,6 +765,6 @@ fn openapi_merger(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_schema_rust, m)?)?;
     m.add_function(wrap_pyfunction!(generate_uuid_short, m)?)?;
     m.add_function(wrap_pyfunction!(process_sources_with_uuid_rust, m)?)?;
-    
+
     Ok(())
 }

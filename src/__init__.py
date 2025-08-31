@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Template
 from loguru import logger
-from schema import Schema, SchemasMerger
+from schema import Schema, SchemasMerger, validate_sources_before_startup
 
 
 def set_docs(app: FastAPI, config: dict):
@@ -26,7 +26,9 @@ def set_schema(app: FastAPI):
     @app.get("/openapi.json", include_in_schema=False)
     async def schema():
         sources = config.get("sources", [])
-        schemas = await Schema.get_schemas(sources)
+        # Используем только валидные источники
+        valid_sources = await validate_sources_before_startup(sources)
+        schemas = await Schema.get_schemas(valid_sources)
         merger = SchemasMerger(schemas)
         return merger.merge()
 
@@ -56,8 +58,25 @@ def set_proxy(app: FastAPI):
 
     logger.info("Caddy detected, setting up proxy routes...")
 
-    # Automatically generate Caddyfile if Caddy is available
-    _generate_caddyfile(sources)
+    # Валидируем источники перед генерацией Caddyfile
+    async def validate_and_generate():
+        valid_sources = await validate_sources_before_startup(sources)
+        _generate_caddyfile(valid_sources)
+    
+    # Запускаем валидацию синхронно для совместимости
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Если уже в event loop, создаем задачу
+            asyncio.create_task(validate_and_generate())
+        else:
+            # Если нет event loop, запускаем новый
+            asyncio.run(validate_and_generate())
+    except RuntimeError:
+        # Fallback для случаев без event loop
+        logger.warning("Could not validate sources asynchronously, proceeding with original sources")
+        _generate_caddyfile(sources)
 
     for source in sources:
         if not source.get("enabled", True):

@@ -1,9 +1,12 @@
 import json
+import asyncio
+import httpx
 
 import dpath
 from config import config
 from loguru import logger
 import openapi_merger
+
 # Импортируем Rust функции
 try:
     from openapi_merger import (
@@ -26,16 +29,102 @@ except ImportError:
     logger.error("Rust functions not available - this is required for operation")
     raise ImportError("Rust functions are required for operation")
 
+
+async def check_url_availability(url: str, timeout: float = 3.0) -> bool:
+    """Check if URL is available with a short timeout"""
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.head(url)
+            return response.status_code < 400
+    except Exception:
+        return False
+
+
+async def validate_sources_before_startup(sources: list[dict]) -> list[dict]:
+    """Validate all external sources before startup and filter out unavailable ones"""
+    logger.info("Validating external API sources before startup...")
+
+    valid_sources = []
+    tasks = []
+
+    for source in sources:
+        if not source.get("enabled", True):
+            continue
+
+        schema_url = source.get("schema", "")
+        if not schema_url:
+            continue
+
+        # Создаем задачу для проверки каждого URL
+        task = asyncio.create_task(check_url_availability(schema_url))
+        tasks.append((source, task))
+
+    # Выполняем все проверки параллельно
+    for source, task in tasks:
+        try:
+            is_available = await task
+            if is_available:
+                valid_sources.append(source)
+                logger.info(
+                    f"✅ Source '{source.get('name', 'Unknown')}' is available: {source.get('schema')}"
+                )
+            else:
+                logger.warning(
+                    f"❌ Source '{source.get('name', 'Unknown')}' is unavailable: {source.get('schema')}"
+                )
+        except Exception as e:
+            logger.error(
+                f"❌ Error checking source '{source.get('name', 'Unknown')}': {e}"
+            )
+
+    logger.info(
+        f"Found {len(valid_sources)} available sources out of {len(sources)} total"
+    )
+    return valid_sources
+
+
+async def get_schema_with_timeout(url: str, timeout: float = 5.0) -> dict:
+    """Get schema with timeout using httpx"""
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+
+            content_type = response.headers.get("content-type", "").lower()
+
+            if "vnd.oai.openapi" in content_type or "json" in content_type:
+                return response.json()
+            elif "yaml" in content_type or "yml" in content_type:
+                import yaml
+
+                return yaml.safe_load(response.text)
+            else:
+                # Try JSON as fallback
+                try:
+                    return response.json()
+                except:
+                    import yaml
+
+                    return yaml.safe_load(response.text)
+
+    except httpx.TimeoutException:
+        logger.warning(f"Timeout ({timeout}s) while fetching schema from {url}")
+        return None
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            f"HTTP error {e.response.status_code} while fetching schema from {url}"
+        )
+        return None
+    except Exception as e:
+        logger.warning(f"Error fetching schema from {url}: {e}")
+        return None
+
+
 class Schema:
     @staticmethod
     async def get_schema(url: str) -> dict:
-        # Используем Rust функцию
-        result = get_schema_sync(url)
-        if isinstance(result, dict) and "data" in result:
-            import json
-
-            return json.loads(result["data"])
-        return result
+        # Используем новую функцию с таймаутом
+        return await get_schema_with_timeout(url)
 
     @staticmethod
     async def get_schemas(
@@ -43,30 +132,27 @@ class Schema:
         *,
         enabled: bool = True,
     ) -> list[tuple[str, dict]]:
-        """Get schemas with service names"""
-        # Используем оптимизированную Rust функцию
-        results = process_sources_with_uuid_rust(sources, enabled)
-
-        # Преобразуем результат в нужный формат
+        # Получаем схемы через Python с таймаутом
         schemas = []
-        for result in results:
-            if isinstance(result, dict):
-                name = result.get("name", "")
-                url = result.get("url", "")
-                schema_data = result.get("schema_data", {})
+        for source in sources:
+            if not source.get("enabled", True):
+                continue
 
-                # Создаем source dict
-                source = {"name": name, "url": url, "enabled": True}
+            name = source.get("name", "")
+            url = source.get("url", "")
+            schema_url = source.get("schema", "")
 
-                # Парсим schema_data
-                if isinstance(schema_data, dict) and "data" in schema_data:
-                    try:
-                        schema = json.loads(schema_data["data"])
-                        schemas.append((name, source, schema))
-                    except json.JSONDecodeError:
-                        logger.error(f"Failed to parse schema data for {name}")
-                else:
-                    logger.error(f"Invalid schema data format for {name}")
+            if not schema_url:
+                continue
+
+            logger.info(f"Fetching schema from {schema_url}")
+            schema_data = await get_schema_with_timeout(schema_url)
+
+            if schema_data:
+                schemas.append((name, source, schema_data))
+                logger.info(f"Successfully loaded schema for {name}")
+            else:
+                logger.warning(f"Failed to load schema for {name}")
 
         return schemas
 
@@ -165,23 +251,7 @@ class SchemasMerger:
         result = merge_schemas_sync(final_schemas, False)  # Группировка уже применена
 
         if isinstance(result, dict) and "merged_schema" in result:
-            try:
-                merged_schema = json.loads(result["merged_schema"])
-
-                # Используем Rust функцию для обновления метаданных
-                metadata_json = json.dumps(merged_schema)
-                config_json = json.dumps(config)
-                updated_json = update_schema_metadata_rust(
-                    metadata_json,
-                    get_config_value_rust(config_json, "settings/title", "Merged API"),
-                    get_config_value_rust(config_json, "settings/description", ""),
-                    get_config_value_rust(config_json, "settings/version", "1.0.0"),
-                )
-
-                return json.loads(updated_json)
-
-            except json.JSONDecodeError:
-                logger.error("Failed to parse merged schema from Rust function")
-                raise RuntimeError("Failed to parse merged schema from Rust function")
-
-        raise RuntimeError("Rust merge_schemas failed to return valid result")
+            return json.loads(result["merged_schema"])
+        else:
+            logger.error("Failed to merge schemas")
+            return {}

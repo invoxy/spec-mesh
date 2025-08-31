@@ -10,3 +10,9 @@ services:
     volumes:
       - ./config.yml:/app/config.yml:ro
     restart: unless-stopped
+    networks:
+      - spec-mesh
+
+networks:
+  spec-mesh:
+    driver: bridge
