@@ -3,7 +3,7 @@ import json
 import dpath
 from config import config
 from loguru import logger
-
+import openapi_merger
 # Импортируем Rust функции
 try:
     from openapi_merger import (
@@ -25,7 +25,6 @@ try:
 except ImportError:
     logger.error("Rust functions not available - this is required for operation")
     raise ImportError("Rust functions are required for operation")
-
 
 class Schema:
     @staticmethod

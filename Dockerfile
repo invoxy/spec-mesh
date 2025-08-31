@@ -45,7 +45,7 @@ COPY src/ ./src/
 RUN mkdir -p /etc/caddy
 
 # Expose port
-EXPOSE 17045
+EXPOSE 8000
 
 COPY ./static ./static/
 COPY start.sh .

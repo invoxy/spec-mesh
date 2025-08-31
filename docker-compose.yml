@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "17045:17045"
+      - "8000:8000"
     volumes:
       - ./config.yml:/app/config.yml:ro
     restart: unless-stopped

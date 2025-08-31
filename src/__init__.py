@@ -127,42 +127,8 @@ def set_proxy(app: FastAPI):
 
 def _generate_caddyfile(sources: list):
     """Automatically generate Caddyfile for external API sources"""
-    try:
-        # Caddyfile template
-        caddy_template = """# Auto-generated Caddy configuration
-# Generated from config.yml
-
-# Main API documentation service
-:8000 {
-    # Serve the main API docs
-    handle /* {
-        reverse_proxy localhost:8001
-    }
-}
-
-# Proxy routes for external APIs
-{% for source in sources %}
-{% if source.enabled %}
-{% if source.url not in ["http://localhost:8000", "http://127.0.0.1:8000", "http://0.0.0.0:8000"] %}
-# External service: {{ source.name }}
-{{ source.safe_name }}/* {
-    reverse_proxy {{ source.url }} {
-        header_up Host {upstream_hostport}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-}
-{% endif %}
-{% endif %}
-{% endfor %}
-
-# Health check endpoint
-:8000/health {
-    respond "OK" 200
-}
-"""
-
+    with Path.open(Path("/app/src") / "caddyfile.template") as f:
+        caddy_template = f.read()
         # Prepare data for template
         external_sources = []
         for source in sources:
@@ -199,19 +165,18 @@ def _generate_caddyfile(sources: list):
         for source in external_sources:
             logger.info(f"  - {source['name']} -> /{source['safe_name']}/")
 
-    except Exception as e:
-        logger.error(f"Failed to generate Caddyfile: {e}")
-
 
 def _create_safe_name(name: str) -> str:
     """Create URL-safe name by removing/replacing special characters"""
     from openapi_merger.openapi_merger import safe_name
+
     return safe_name(name)
 
 
 def _check_caddy_availability() -> bool:
     """Check if Caddy is available (running in container or system)"""
     from openapi_merger.openapi_merger import is_caddy_available
+
     return is_caddy_available()
 
 

@@ -1,12 +1,12 @@
 sources:
   - name: test
-    url: http://127.0.0.1:8000/
-    schema: http://127.0.0.1:8000/openapi.json
-    enabled: false
+    url: http://localhost:8001/
+    schema: http://localhost:8001/openapi.json
+    enabled: true
 
 settings:
   title: Merged API
   description: Merged API description
   version: 1.0.0
   grouping: true
-  proxy: false
+  proxy: true

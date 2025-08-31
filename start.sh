@@ -24,4 +24,18 @@ fi
 # Start the API service
 echo "Starting API service..."
 
-exec /app/.venv/bin/python -B src/main.py
+# Start the API service in background
+/app/.venv/bin/python -B src/main.py &
+API_PID=$!
+
+# Wait for API to start and generate new Caddyfile
+sleep 5
+
+# Reload Caddy configuration if needed
+if [ -f "/etc/caddy/Caddyfile" ]; then
+    echo "Reloading Caddy configuration..."
+    caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+fi
+
+# Wait for both processes
+wait $API_PID
