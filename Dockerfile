@@ -1,34 +1,59 @@
-# Multi-stage build for faster dependency installation
-FROM python:3.13.3-alpine AS builder
+FROM python:3.13.3-alpine AS maturin
+
+RUN apk add --no-cache \
+    rust \
+    cargo \
+    musl-dev \
+    openssl-dev \
+    pkgconfig \
+    gcc \
+    libc-dev \
+    linux-headers
+
+RUN pip install maturin patchelf
+
+WORKDIR /module
+
+COPY openapi-merge/ .
+
+RUN maturin build --release
+
+FROM ghcr.io/astral-sh/uv:python3.13-alpine AS dependencies
 
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
 COPY pyproject.toml .
-RUN pip install uv && uv sync
+RUN uv sync
 
-# Production stage with Caddy
-FROM python:3.13.3-alpine AS work
+COPY --from=maturin /module/target/wheels/* ./modules/
 
+RUN uv pip install modules/*
+
+# Fix permissions for virtual environment
+RUN chmod -R 755 /app/.venv/bin && \
+    ls -la /app/.venv/bin/
+
+FROM python:3.13.3-alpine AS production
+
+RUN apk add --no-cache caddy
 WORKDIR /app
 
-COPY --from=builder /app/.venv /app/.venv
-
-RUN apk add caddy
-
-# Copy source code
+COPY --from=dependencies /app /app
 COPY src/ ./src/
-COPY static/ ./static/
 
-# Copy startup script
-COPY start.sh ./
-RUN chmod +x start.sh
-
-# Create directory for Caddy config
+# Create Caddy config directory
 RUN mkdir -p /etc/caddy
 
+# Expose port
 EXPOSE 17045
 
+COPY ./static ./static/
+COPY start.sh .
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+
+# Environment variable
 ENV CADDY_AVAILABLE=true
 
-CMD ["sh", "start.sh"]
+CMD ["sh","start.sh"]

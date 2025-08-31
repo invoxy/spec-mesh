@@ -5,6 +5,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 // === Типы ===
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,22 +16,41 @@ struct Source {
     enabled: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SchemaWithMetadata {
+    name: String,
+    url: String,
+    schema_data: String,
+}
+
+// === Кэшированные регулярные выражения ===
+static SAFE_NAME_REGEX: OnceLock<Regex> = OnceLock::new();
+static SAFE_NAME_REGEX2: OnceLock<Regex> = OnceLock::new();
+
+fn get_safe_name_regex() -> &'static Regex {
+    SAFE_NAME_REGEX.get_or_init(|| Regex::new(r"[^a-zA-Z0-9_-]").unwrap())
+}
+
+fn get_safe_name_regex2() -> &'static Regex {
+    SAFE_NAME_REGEX2.get_or_init(|| Regex::new(r"_+").unwrap())
+}
+
 // === Вспомогательные функции ===
 
 #[pyfunction]
 fn safe_name(name: &str) -> String {
-    let re = Regex::new(r"[^a-zA-Z0-9_-]").unwrap();
+    let re = get_safe_name_regex();
     let mut name = re.replace_all(name, "_").to_string();
-    let re2 = Regex::new(r"_+").unwrap();
+    let re2 = get_safe_name_regex2();
     name = re2.replace_all(&name, "_").to_string();
     name = name.trim_matches('_').to_string();
     name.to_lowercase()
 }
 
 fn safe_name_internal(name: &str) -> String {
-    let re = Regex::new(r"[^a-zA-Z0-9_-]").unwrap();
+    let re = get_safe_name_regex();
     let mut name = re.replace_all(name, "_").to_string();
-    let re2 = Regex::new(r"_+").unwrap();
+    let re2 = get_safe_name_regex2();
     name = re2.replace_all(&name, "_").to_string();
     name = name.trim_matches('_').to_string();
     name.to_lowercase()
@@ -54,6 +74,177 @@ fn is_caddy_available() -> bool {
     }
 
     false
+}
+
+// === Новые оптимизированные функции ===
+
+#[pyfunction]
+fn prepare_server_for_schema_rust(schema_json: &str, url: &str, source_name: Option<&str>) -> PyResult<String> {
+    let mut schema: Value = serde_json::from_str(schema_json).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to parse schema: {}", e))
+    })?;
+
+    let proxy_enabled = std::env::var("PROXY_ENABLED").unwrap_or_default() == "true" || 
+                       std::env::var("PROXY").unwrap_or_default() == "true";
+    
+    // Оптимизированная обработка путей
+    if let Some(paths) = schema.get_mut("paths").and_then(|v| v.as_object_mut()) {
+        for operations in paths.values_mut() {
+            if let Some(methods) = operations.as_object_mut() {
+                for operation in methods.values_mut() {
+                    if let Some(op) = operation.as_object_mut() {
+                        let servers = op.entry("servers").or_insert_with(|| json!([]));
+                        if let Some(servers_arr) = servers.as_array_mut() {
+                            // Проверяем существование сервера
+                            let server_exists = servers_arr
+                                .iter()
+                                .any(|s| s.get("url").and_then(|u| u.as_str()) == Some(url));
+
+                            if !server_exists {
+                                if proxy_enabled && source_name.is_some() {
+                                    if is_caddy_available() {
+                                        let safe_name = safe_name_internal(source_name.unwrap());
+                                        let proxy_url = format!("/proxy/{}", safe_name);
+                                        servers_arr.push(json!({
+                                            "url": proxy_url,
+                                            "description": format!("Proxied to {}", url)
+                                        }));
+                                    } else {
+                                        servers_arr.push(json!({"url": url}));
+                                    }
+                                } else {
+                                    servers_arr.push(json!({"url": url}));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    serde_json::to_string(&schema).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to serialize schema: {}", e))
+    })
+}
+
+#[pyfunction]
+fn prepare_grouping_rust(schema_json: &str, name: &str) -> PyResult<String> {
+    let mut schema: Value = serde_json::from_str(schema_json).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to parse schema: {}", e))
+    })?;
+
+    // Обработка глобальных тегов
+    if let Some(tags) = schema.get_mut("tags").and_then(|v| v.as_array_mut()) {
+        for tag in tags {
+            if let Some(tag_obj) = tag.as_object_mut() {
+                if let Some(tag_name) = tag_obj.get("name").and_then(|n| n.as_str()) {
+                    tag_obj.insert(
+                        "name".to_string(),
+                        json!(format!("{} | {}", name, tag_name)),
+                    );
+                }
+            }
+        }
+    }
+
+    // Обработка тегов в путях
+    if let Some(paths) = schema.get_mut("paths").and_then(|v| v.as_object_mut()) {
+        for operations in paths.values_mut() {
+            if let Some(methods) = operations.as_object_mut() {
+                for operation in methods.values_mut() {
+                    if let Some(op) = operation.as_object_mut() {
+                        if let Some(tags) = op.get_mut("tags").and_then(|t| t.as_array_mut()) {
+                            for tag in tags {
+                                if let Some(t) = tag.as_str() {
+                                    *tag = json!(format!("{} | {}", name, t));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    serde_json::to_string(&schema).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to serialize schema: {}", e))
+    })
+}
+
+#[pyfunction]
+fn update_schema_metadata_rust(schema_json: &str, title: &str, description: &str, version: &str) -> PyResult<String> {
+    let mut schema: Value = serde_json::from_str(schema_json).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to parse schema: {}", e))
+    })?;
+
+    // Обновляем метаданные
+    if let Some(info) = schema.get_mut("info").and_then(|i| i.as_object_mut()) {
+        info.insert("title".to_string(), json!(title));
+        info.insert("description".to_string(), json!(description));
+        info.insert("version".to_string(), json!(version));
+    } else {
+        schema["info"] = json!({
+            "title": title,
+            "description": description,
+            "version": version
+        });
+    }
+
+    schema["openapi"] = json!("3.1.0");
+
+    serde_json::to_string(&schema).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to serialize schema: {}", e))
+    })
+}
+
+#[pyfunction]
+fn process_sources_rust(sources: &PyList, enabled: bool) -> PyResult<Vec<PyObject>> {
+    let mut results = Vec::new();
+
+    Python::with_gil(|py| {
+        for item in sources.iter() {
+            let dict = item.downcast::<PyDict>().map_err(|_| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>("Each source must be a dict")
+            })?;
+
+            let name: String = dict
+                .get_item("name")
+                .and_then(|v| v.extract().ok())
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..10].to_string());
+
+            let schema_url: String = match dict.get_item("schema") {
+                Some(v) => v.extract()?,
+                None => continue,
+            };
+
+            let service_url: String = dict
+                .get_item("url")
+                .and_then(|v| v.extract().ok())
+                .unwrap_or_else(|| "http://localhost".to_string());
+
+            let enabled_flag: bool = dict
+                .get_item("enabled")
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(enabled);
+
+            if enabled_flag {
+                // Создаем результат для каждого источника
+                let result = PyDict::new(py);
+                result.set_item("name", name)?;
+                result.set_item("url", service_url)?;
+                result.set_item("schema", schema_url.clone())?;
+                result.set_item("enabled", enabled_flag)?;
+
+                // Получаем схему
+                let schema = get_schema_sync(&schema_url)?;
+                result.set_item("schema_data", schema)?;
+
+                results.push(result.into_py(py));
+            }
+        }
+        Ok(results)
+    })
 }
 
 // === Основные функции ===
@@ -303,6 +494,120 @@ fn merge_schemas_sync(schemas: &PyList, grouping: bool) -> PyResult<PyObject> {
     })
 }
 
+#[pyfunction]
+fn process_schemas_batch_rust(schemas_data: &PyList, grouping: bool) -> PyResult<Vec<String>> {
+    let mut processed_schemas = Vec::new();
+    
+    for schema_item in schemas_data.iter() {
+        let dict = schema_item.downcast::<PyDict>().map_err(|_| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>("Each schema must be a dict")
+        })?;
+        
+        let name: String = dict.get_item("name").unwrap().extract()?;
+        let url: String = dict.get_item("url").unwrap().extract()?;
+        let schema_json: String = dict.get_item("schema_data").unwrap().extract()?;
+        
+        // Обрабатываем схему с серверами
+        let schema_with_servers = prepare_server_for_schema_rust(&schema_json, &url, Some(&name))?;
+        
+        // Если включена группировка, добавляем префикс к тегам
+        let final_schema = if grouping {
+            prepare_grouping_rust(&schema_with_servers, &name)?
+        } else {
+            schema_with_servers
+        };
+        
+        processed_schemas.push(final_schema);
+    }
+    
+    Ok(processed_schemas)
+}
+
+#[pyfunction]
+fn get_config_value_rust(config_json: &str, path: &str, default_value: &str) -> PyResult<String> {
+    let config: Value = serde_json::from_str(config_json).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to parse config: {}", e))
+    })?;
+    
+    // Простое извлечение значения по пути (например, "settings/title")
+    let path_parts: Vec<&str> = path.split('/').collect();
+    let mut current = &config;
+    
+    for part in path_parts {
+        if let Some(obj) = current.as_object() {
+            if let Some(value) = obj.get(part) {
+                current = value;
+            } else {
+                return Ok(default_value.to_string());
+            }
+        } else {
+            return Ok(default_value.to_string());
+        }
+    }
+    
+    if let Some(str_val) = current.as_str() {
+        Ok(str_val.to_string())
+    } else {
+        Ok(default_value.to_string())
+    }
+}
+
+#[pyfunction]
+fn validate_schema_rust(schema_json: &str) -> PyResult<bool> {
+    let schema: Value = serde_json::from_str(schema_json).map_err(|_| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid JSON format")
+    })?;
+    
+    // Базовая валидация OpenAPI схемы
+    if !schema.is_object() {
+        return Ok(false);
+    }
+    
+    let obj = schema.as_object().unwrap();
+    
+    // Проверяем обязательные поля
+    if !obj.contains_key("openapi") && !obj.contains_key("swagger") {
+        return Ok(false);
+    }
+    
+    if !obj.contains_key("info") {
+        return Ok(false);
+    }
+    
+    if !obj.contains_key("paths") {
+        return Ok(false);
+    }
+    
+    // Проверяем info секцию
+    if let Some(info) = obj.get("info") {
+        if let Some(info_obj) = info.as_object() {
+            if !info_obj.contains_key("title") || !info_obj.contains_key("version") {
+                return Ok(false);
+            }
+        } else {
+            return Ok(false);
+        }
+    } else {
+        return Ok(false);
+    }
+    
+    // Проверяем paths секцию
+    if let Some(paths) = obj.get("paths") {
+        if !paths.is_object() {
+            return Ok(false);
+        }
+    } else {
+        return Ok(false);
+    }
+    
+    Ok(true)
+}
+
+#[pyfunction]
+fn generate_uuid_short() -> String {
+    uuid::Uuid::new_v4().to_string()[..10].to_string()
+}
+
 fn add_servers_to_schema(schema: &Value, url: &str, service_name: &str) -> Value {
     let mut schema = schema.clone();
     if let Some(paths) = schema.get_mut("paths").and_then(|v| v.as_object_mut()) {
@@ -318,7 +623,8 @@ fn add_servers_to_schema(schema: &Value, url: &str, service_name: &str) -> Value
                             {
                                 let mut server_obj = json!({"url": url});
                                 let proxy_enabled =
-                                    std::env::var("PROXY_ENABLED").unwrap_or_default() == "true";
+                                    std::env::var("PROXY_ENABLED").unwrap_or_default() == "true" ||
+                                    std::env::var("PROXY").unwrap_or_default() == "true";
 
                                 if proxy_enabled && is_caddy_available() {
                                     let safe = safe_name_internal(service_name);
@@ -371,6 +677,55 @@ fn add_service_prefix_to_tags(schema: &mut Value, service_name: &str) {
     }
 }
 
+#[pyfunction]
+fn process_sources_with_uuid_rust(sources: &PyList, enabled: bool) -> PyResult<Vec<PyObject>> {
+    let mut results = Vec::new();
+
+    Python::with_gil(|py| {
+        for item in sources.iter() {
+            let dict = item.downcast::<PyDict>().map_err(|_| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>("Each source must be a dict")
+            })?;
+
+            let name: String = dict
+                .get_item("name")
+                .and_then(|v| v.extract().ok())
+                .unwrap_or_else(|| generate_uuid_short());
+
+            let schema_url: String = match dict.get_item("schema") {
+                Some(v) => v.extract()?,
+                None => continue,
+            };
+
+            let service_url: String = dict
+                .get_item("url")
+                .and_then(|v| v.extract().ok())
+                .unwrap_or_else(|| "http://localhost".to_string());
+
+            let enabled_flag: bool = dict
+                .get_item("enabled")
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(enabled);
+
+            if enabled_flag {
+                // Создаем результат для каждого источника
+                let result = PyDict::new(py);
+                result.set_item("name", name)?;
+                result.set_item("url", service_url)?;
+                result.set_item("schema", schema_url.clone())?;
+                result.set_item("enabled", enabled_flag)?;
+
+                // Получаем схему
+                let schema = get_schema_sync(&schema_url)?;
+                result.set_item("schema_data", schema)?;
+
+                results.push(result.into_py(py));
+            }
+        }
+        Ok(results)
+    })
+}
+
 // === Модуль ===
 #[pymodule]
 fn openapi_merger(_py: Python, m: &PyModule) -> PyResult<()> {
@@ -379,5 +734,17 @@ fn openapi_merger(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(merge_schemas_sync, m)?)?;
     m.add_function(wrap_pyfunction!(safe_name, m)?)?;
     m.add_function(wrap_pyfunction!(is_caddy_available, m)?)?;
+    
+    // Новые оптимизированные функции
+    m.add_function(wrap_pyfunction!(prepare_server_for_schema_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(prepare_grouping_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(update_schema_metadata_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(process_sources_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(process_schemas_batch_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(get_config_value_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_schema_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_uuid_short, m)?)?;
+    m.add_function(wrap_pyfunction!(process_sources_with_uuid_rust, m)?)?;
+    
     Ok(())
 }

@@ -23,4 +23,5 @@ fi
 
 # Start the API service
 echo "Starting API service..."
-exec /app/.venv/bin/uv run src/main.py
+
+exec /app/.venv/bin/python -B src/main.py

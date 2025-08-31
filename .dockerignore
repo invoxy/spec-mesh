@@ -1,8 +1,75 @@
-config.yml
-Caddyfile
-.env
+# Git
 .git
 .gitignore
-.dockerignore
-.docker
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Virtual environments
+.env
 .venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Rust build artifacts
+openapi-merge/target/
+openapi-merge/Cargo.lock
+
+# Documentation
+*.md
+docs/
+
+# Tests
+tests/
+test_*.py
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
